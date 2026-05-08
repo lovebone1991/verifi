@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Verifi — Real Estate Financial Model Auditor</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d0f14;
+      --surface: #16191f;
+      --border: #252830;
+      --accent: #4f8ef7;
+      --accent-dim: #2a4a8a;
+      --text: #e8eaf0;
+      --muted: #8a8fa8;
+      --green: #3ecf8e;
+      --red: #f76c6c;
+      --yellow: #f7c94f;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    header {
+      width: 100%;
+      padding: 20px 40px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: var(--accent);
+    }
+
+    .logo span { color: var(--text); }
+
+    .tagline {
+      margin-left: auto;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 20px;
+      width: 100%;
+      max-width: 680px;
+    }
+
+    h1 {
+      font-size: 42px;
+      font-weight: 800;
+      letter-spacing: -1px;
+      text-align: center;
+      line-height: 1.15;
+      margin-bottom: 16px;
+    }
+
+    h1 em {
+      font-style: normal;
+      color: var(--accent);
+    }
+
+    .subtitle {
+      text-align: center;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.6;
+      margin-bottom: 48px;
+      max-width: 520px;
+    }
+
+    .upload-zone {
+      width: 100%;
+      border: 2px dashed var(--border);
+      border-radius: 16px;
+      padding: 48px 32px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      background: var(--surface);
+      position: relative;
+    }
+
+    .upload-zone:hover,
+    .upload-zone.drag-over {
+      border-color: var(--accent);
+      background: #1a1e2a;
+    }
+
+    .upload-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .upload-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+      display: block;
+    }
+
+    .upload-label {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .upload-hint {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .file-selected {
+      display: none;
+      align-items: center;
+      gap: 12px;
+      background: var(--accent-dim);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-top: 20px;
+      font-size: 14px;
+    }
+
+    .file-selected.visible { display: flex; }
+
+    .file-name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 32px;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.2s, transform 0.1s;
+      text-decoration: none;
+    }
+
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      width: 100%;
+      justify-content: center;
+      margin-top: 24px;
+      font-size: 17px;
+    }
+
+    .btn-primary:hover:not(:disabled) { opacity: 0.88; }
+
+    .progress-wrap {
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 24px;
+      width: 100%;
+    }
+
+    .progress-wrap.visible { display: flex; }
+
+    .progress-bar-bg {
+      height: 6px;
+      border-radius: 3px;
+      background: var(--border);
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 3px;
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    .progress-status {
+      font-size: 13px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .error-box {
+      display: none;
+      background: #2a1515;
+      border: 1px solid var(--red);
+      color: var(--red);
+      border-radius: 10px;
+      padding: 14px 18px;
+      font-size: 14px;
+      margin-top: 16px;
+      width: 100%;
+    }
+
+    .error-box.visible { display: block; }
+
+    .features {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-top: 64px;
+      width: 100%;
+    }
+
+    .feature {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+
+    .feature-icon { font-size: 24px; margin-bottom: 10px; }
+
+    .feature-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .feature-desc {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    footer {
+      padding: 24px;
+      font-size: 12px;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      width: 100%;
+      text-align: center;
+    }
+
+    @media (max-width: 600px) {
+      h1 { font-size: 30px; }
+      .features { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Veri<span>fi</span></div>
+  <div class="tagline">AI-Powered Real Estate Financial Audit</div>
+</header>
+
+<main>
+  <h1>Audit your <em>financial model</em><br>in seconds</h1>
+  <p class="subtitle">
+    Upload an Excel-based real estate underwriting model. Verifi analyzes assumptions,
+    flags errors, checks formulas, and delivers a structured audit report — powered by Claude AI.
+  </p>
+
+  <div class="upload-zone" id="dropZone">
+    <input type="file" id="fileInput" accept=".xlsx,.xls,.xlsm" />
+    <span class="upload-icon">📊</span>
+    <div class="upload-label">Drop your Excel model here</div>
+    <div class="upload-hint">Supports .xlsx, .xls, .xlsm — up to 20 MB</div>
+  </div>
+
+  <div class="file-selected" id="fileSelected">
+    <span>📄</span>
+    <span class="file-name" id="fileName"></span>
+    <span id="fileSize" style="color:var(--muted);font-size:12px;white-space:nowrap;"></span>
+  </div>
+
+  <button class="btn btn-primary" id="analyzeBtn" disabled>
+    ✦ Analyze Model
+  </button>
+
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-bar-bg">
+      <div class="progress-bar-fill" id="progressFill"></div>
+    </div>
+    <div class="progress-status" id="progressStatus">Uploading file…</div>
+  </div>
+
+  <div class="error-box" id="errorBox"></div>
+
+  <div class="features">
+    <div class="feature">
+      <div class="feature-icon">🔍</div>
+      <div class="feature-title">Assumption Review</div>
+      <div class="feature-desc">Flags cap rates, rent growth, vacancy, expense ratios, and debt assumptions against market norms.</div>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">⚠️</div>
+      <div class="feature-title">Error Detection</div>
+      <div class="feature-desc">Identifies formula breaks, circular references, hardcoded overrides, and balance sheet mismatches.</div>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">📋</div>
+      <div class="feature-title">Structured Report</div>
+      <div class="feature-desc">Delivers a clear pass/fail audit with severity ratings, findings, and recommended corrections.</div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  Verifi &copy; 2026 — Built with Claude AI &amp; Vercel
+</footer>
+
+<script>
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  const fileSelected = document.getElementById('fileSelected');
+  const fileName = document.getElementById('fileName');
+  const fileSize = document.getElementById('fileSize');
+  const analyzeBtn = document.getElementById('analyzeBtn');
+  const progressWrap = document.getElementById('progressWrap');
+  const progressFill = document.getElementById('progressFill');
+  const progressStatus = document.getElementById('progressStatus');
+  const errorBox = document.getElementById('errorBox');
+
+  let selectedFile = null;
+
+  function formatBytes(b) {
+    if (b < 1024) return b + ' B';
+    if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+    return (b / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  function setFile(file) {
+    if (!file) return;
+    const allowed = ['.xlsx', '.xls', '.xlsm'];
+    const ext = '.' + file.name.split('.').pop().toLowerCase();
+    if (!allowed.includes(ext)) {
+      showError('Please upload an Excel file (.xlsx, .xls, or .xlsm).');
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      showError('File exceeds the 20 MB limit.');
+      return;
+    }
+    selectedFile = file;
+    fileName.textContent = file.name;
+    fileSize.textContent = formatBytes(file.size);
+    fileSelected.classList.add('visible');
+    analyzeBtn.disabled = false;
+    errorBox.classList.remove('visible');
+  }
+
+  fileInput.addEventListener('change', e => setFile(e.target.files[0]));
+
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    setFile(e.dataTransfer.files[0]);
+  });
+
+  function showError(msg) {
+    errorBox.textContent = msg;
+    errorBox.classList.add('visible');
+  }
+
+  function setProgress(pct, label) {
+    progressFill.style.width = pct + '%';
+    progressStatus.textContent = label;
+  }
+
+  analyzeBtn.addEventListener('click', async () => {
+    if (!selectedFile) return;
+
+    analyzeBtn.disabled = true;
+    progressWrap.classList.add('visible');
+    errorBox.classList.remove('visible');
+    setProgress(10, 'Uploading file…');
+
+    const form = new FormData();
+    form.append('file', selectedFile);
+
+    try {
+      setProgress(30, 'Parsing spreadsheet…');
+      const res = await fetch('/api/analyze', { method: 'POST', body: form });
+      setProgress(70, 'Analyzing with Claude AI…');
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(err.error || `Server error ${res.status}`);
+      }
+
+      setProgress(95, 'Building report…');
+      const data = await res.json();
+      setProgress(100, 'Done!');
+
+      sessionStorage.setItem('verifi_report', JSON.stringify(data));
+      window.location.href = '/report';
+    } catch (err) {
+      showError(err.message || 'Something went wrong. Please try again.');
+      progressWrap.classList.remove('visible');
+      analyzeBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

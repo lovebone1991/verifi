@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Verifi — Audit Report</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d0f14;
+      --surface: #16191f;
+      --border: #252830;
+      --accent: #4f8ef7;
+      --text: #e8eaf0;
+      --muted: #8a8fa8;
+      --green: #3ecf8e;
+      --red: #f76c6c;
+      --yellow: #f7c94f;
+      --orange: #f79c4f;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    header {
+      padding: 20px 40px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      z-index: 100;
+    }
+
+    .logo {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .logo span { color: var(--text); }
+
+    .header-right {
+      margin-left: auto;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.2s;
+      text-decoration: none;
+    }
+
+    .btn-outline {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { opacity: 0.85; }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 40px 24px 80px;
+    }
+
+    .report-header {
+      margin-bottom: 36px;
+    }
+
+    .report-title {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      margin-bottom: 6px;
+    }
+
+    .report-meta {
+      font-size: 13px;
+      color: var(--muted);
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    .verdict-banner {
+      border-radius: 14px;
+      padding: 24px 28px;
+      margin-bottom: 32px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .verdict-banner.pass {
+      background: #0f2a1e;
+      border: 1px solid var(--green);
+    }
+
+    .verdict-banner.fail {
+      background: #2a0f0f;
+      border: 1px solid var(--red);
+    }
+
+    .verdict-banner.warn {
+      background: #2a220f;
+      border: 1px solid var(--yellow);
+    }
+
+    .verdict-icon { font-size: 40px; }
+
+    .verdict-label {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+
+    .verdict-banner.pass .verdict-label { color: var(--green); }
+    .verdict-banner.fail .verdict-label { color: var(--red); }
+    .verdict-banner.warn .verdict-label { color: var(--yellow); }
+
+    .verdict-desc {
+      font-size: 14px;
+      color: var(--muted);
+      margin-top: 4px;
+      line-height: 1.5;
+    }
+
+    .score-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-bottom: 36px;
+    }
+
+    .score-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+    }
+
+    .score-card-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .score-card-value {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+
+    .score-card-value.green { color: var(--green); }
+    .score-card-value.red { color: var(--red); }
+    .score-card-value.yellow { color: var(--yellow); }
+    .score-card-value.orange { color: var(--orange); }
+
+    .section {
+      margin-bottom: 32px;
+    }
+
+    .section-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .finding {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 18px;
+      margin-bottom: 10px;
+      border-left: 4px solid var(--border);
+    }
+
+    .finding.critical { border-left-color: var(--red); }
+    .finding.high { border-left-color: var(--orange); }
+    .finding.medium { border-left-color: var(--yellow); }
+    .finding.low { border-left-color: var(--green); }
+    .finding.info { border-left-color: var(--accent); }
+
+    .finding-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+
+    .severity-badge {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .badge-critical { background: #4a1515; color: var(--red); }
+    .badge-high { background: #3a2010; color: var(--orange); }
+    .badge-medium { background: #3a300a; color: var(--yellow); }
+    .badge-low { background: #0f2a1e; color: var(--green); }
+    .badge-info { background: #1a2a4a; color: var(--accent); }
+
+    .finding-title {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .finding-location {
+      font-size: 11px;
+      color: var(--muted);
+      margin-left: auto;
+      font-family: monospace;
+    }
+
+    .finding-detail {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .finding-recommendation {
+      font-size: 13px;
+      color: var(--text);
+      margin-top: 8px;
+      padding: 8px 12px;
+      background: #1a1e28;
+      border-radius: 6px;
+      line-height: 1.5;
+    }
+
+    .finding-recommendation::before {
+      content: '→ ';
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .summary-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 24px;
+      font-size: 14px;
+      line-height: 1.7;
+      color: var(--muted);
+      white-space: pre-wrap;
+    }
+
+    .summary-box strong { color: var(--text); }
+
+    .empty-state {
+      text-align: center;
+      padding: 80px 20px;
+      color: var(--muted);
+    }
+
+    .empty-state a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    .print-hide { }
+
+    @media print {
+      .print-hide { display: none !important; }
+      body { background: #fff; color: #000; }
+      header { position: static; }
+    }
+
+    @media (max-width: 600px) {
+      .score-row { grid-template-columns: repeat(2, 1fr); }
+      header { padding: 14px 20px; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="print-hide">
+  <a class="logo" href="/">Veri<span>fi</span></a>
+  <div class="header-right">
+    <a href="/" class="btn btn-outline">← New Audit</a>
+    <button class="btn btn-primary" onclick="window.print()">⬇ Export PDF</button>
+  </div>
+</header>
+
+<div class="container" id="app">
+  <div class="empty-state">
+    <p style="font-size:40px;margin-bottom:16px;">📊</p>
+    <p style="font-size:18px;font-weight:700;margin-bottom:8px;">No report found</p>
+    <p>Please <a href="/">upload a financial model</a> to generate an audit report.</p>
+  </div>
+</div>
+
+<script>
+  const raw = sessionStorage.getItem('verifi_report');
+  if (!raw) {
+    // empty state already shown
+  } else {
+    try {
+      const data = JSON.parse(raw);
+      renderReport(data);
+    } catch (e) {
+      document.getElementById('app').innerHTML = '<div class="empty-state"><p>Failed to parse report. Please try again.</p></div>';
+    }
+  }
+
+  function sev(s) {
+    s = (s || '').toLowerCase();
+    return ['critical','high','medium','low','info'].includes(s) ? s : 'info';
+  }
+
+  function sevLabel(s) {
+    return { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', info: 'Info' }[sev(s)] || s;
+  }
+
+  function escHtml(str) {
+    return String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function renderReport(d) {
+    const findings = d.findings || [];
+    const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+    findings.forEach(f => counts[sev(f.severity)]++);
+
+    const overallSev = counts.critical > 0 ? 'fail' : (counts.high > 0 ? 'warn' : 'pass');
+    const verdictMap = {
+      fail: { icon: '❌', label: 'Fail', desc: 'Critical issues detected. This model requires immediate attention before use in investment decisions.' },
+      warn: { icon: '⚠️', label: 'Conditional Pass', desc: 'High-severity issues found. Review and resolve flagged items before relying on this model.' },
+      pass: { icon: '✅', label: 'Pass', desc: 'No critical or high-severity issues found. Minor items noted below for your consideration.' }
+    };
+    const v = verdictMap[overallSev];
+
+    const scoreColor = (n, good) => {
+      if (n === 0) return 'green';
+      return good ? 'green' : (n > 2 ? 'red' : 'yellow');
+    };
+
+    const now = new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+
+    const findingsHtml = findings.length === 0
+      ? '<p style="color:var(--muted);font-size:14px;">No findings to display.</p>'
+      : findings.map(f => {
+          const s = sev(f.severity);
+          return `
+            <div class="finding ${s}">
+              <div class="finding-header">
+                <span class="severity-badge badge-${s}">${sevLabel(s)}</span>
+                <span class="finding-title">${escHtml(f.title)}</span>
+                ${f.location ? `<span class="finding-location">${escHtml(f.location)}</span>` : ''}
+              </div>
+              <div class="finding-detail">${escHtml(f.detail)}</div>
+              ${f.recommendation ? `<div class="finding-recommendation">${escHtml(f.recommendation)}</div>` : ''}
+            </div>`;
+        }).join('');
+
+    document.getElementById('app').innerHTML = `
+      <div class="report-header">
+        <div class="report-title">Audit Report</div>
+        <div class="report-meta">
+          <span>📁 ${escHtml(d.fileName || 'Unknown file')}</span>
+          <span>🗓 ${now}</span>
+          ${d.sheetCount ? `<span>📋 ${d.sheetCount} sheets analyzed</span>` : ''}
+        </div>
+      </div>
+
+      <div class="verdict-banner ${overallSev}">
+        <div class="verdict-icon">${v.icon}</div>
+        <div>
+          <div class="verdict-label">${v.label}</div>
+          <div class="verdict-desc">${v.desc}</div>
+        </div>
+      </div>
+
+      <div class="score-row">
+        <div class="score-card">
+          <div class="score-card-label">Critical Issues</div>
+          <div class="score-card-value ${counts.critical > 0 ? 'red' : 'green'}">${counts.critical}</div>
+        </div>
+        <div class="score-card">
+          <div class="score-card-label">High Severity</div>
+          <div class="score-card-value ${counts.high > 0 ? 'orange' : 'green'}">${counts.high}</div>
+        </div>
+        <div class="score-card">
+          <div class="score-card-label">Medium / Low</div>
+          <div class="score-card-value yellow">${counts.medium + counts.low}</div>
+        </div>
+        <div class="score-card">
+          <div class="score-card-label">Total Findings</div>
+          <div class="score-card-value">${findings.length}</div>
+        </div>
+      </div>
+
+      ${d.summary ? `
+      <div class="section">
+        <div class="section-title">📝 Executive Summary</div>
+        <div class="summary-box">${escHtml(d.summary)}</div>
+      </div>` : ''}
+
+      <div class="section">
+        <div class="section-title">🔍 Audit Findings (${findings.length})</div>
+        ${findingsHtml}
+      </div>
+
+      ${d.rawAnalysis ? `
+      <div class="section">
+        <div class="section-title">📄 Full Analysis</div>
+        <div class="summary-box">${escHtml(d.rawAnalysis)}</div>
+      </div>` : ''}
+    `;
+  }
+</script>
+</body>
+</html>

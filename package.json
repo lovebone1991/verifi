@@ -1,0 +1,17 @@
+{
+  "name": "verifi",
+  "version": "1.0.0",
+  "description": "Real estate financial model audit tool",
+  "type": "module",
+  "scripts": {
+    "dev": "vercel dev"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0",
+    "xlsx": "^0.18.5",
+    "formidable": "^3.5.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
