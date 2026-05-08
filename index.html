@@ -4,93 +4,113 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Verifi — Real Estate Financial Model Auditor</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg: #0d0f14;
-      --surface: #16191f;
-      --border: #252830;
-      --accent: #4f8ef7;
-      --accent-dim: #2a4a8a;
-      --text: #e8eaf0;
-      --muted: #8a8fa8;
-      --green: #3ecf8e;
-      --red: #f76c6c;
-      --yellow: #f7c94f;
+      --bg: #f5f4ef;
+      --surface: #ffffff;
+      --surface-2: #eeedе6;
+      --border: #dddcd4;
+      --border-2: #ccccc4;
+      --accent: #1a56db;
+      --accent-dim: #e8f0fe;
+      --text: #0e0e0c;
+      --muted: #6a6960;
+      --faint: #9a9990;
+      --green: #1a6b3c;
+      --green-bg: #edf5f0;
+      --red: #b83224;
+      --red-bg: #fdf0ee;
+      --amber: #7a5200;
+      --amber-bg: #fdf6e3;
+      --sans: 'DM Sans', system-ui, sans-serif;
+      --mono: 'DM Mono', monospace;
     }
 
     body {
-      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-family: var(--sans);
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
       align-items: center;
+      -webkit-font-smoothing: antialiased;
     }
 
+    /* NAV */
     header {
       width: 100%;
-      padding: 20px 40px;
+      padding: 20px 48px;
       display: flex;
       align-items: center;
       gap: 12px;
       border-bottom: 1px solid var(--border);
+      background: var(--surface);
     }
-
     .logo {
-      font-size: 22px;
-      font-weight: 700;
-      letter-spacing: -0.5px;
-      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 15px;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      color: var(--text);
     }
+    .logo span { color: var(--red); }
+    .tagline { margin-left: auto; font-size: 13px; color: var(--faint); font-weight: 300; }
 
-    .logo span { color: var(--text); }
-
-    .tagline {
-      margin-left: auto;
-      font-size: 13px;
-      color: var(--muted);
-    }
-
+    /* HERO */
     main {
       flex: 1;
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
-      padding: 60px 20px;
+      padding: 72px 24px 80px;
       width: 100%;
       max-width: 680px;
     }
 
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--border-2);
+      border-radius: 100px;
+      padding: 5px 14px;
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 400;
+      margin-bottom: 28px;
+      background: var(--surface);
+    }
+    .badge-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+
     h1 {
-      font-size: 42px;
-      font-weight: 800;
-      letter-spacing: -1px;
+      font-size: clamp(34px, 5vw, 48px);
+      font-weight: 600;
+      letter-spacing: -0.03em;
       text-align: center;
       line-height: 1.15;
       margin-bottom: 16px;
+      color: var(--text);
     }
-
-    h1 em {
-      font-style: normal;
-      color: var(--accent);
-    }
+    h1 em { font-style: normal; color: var(--accent); }
 
     .subtitle {
       text-align: center;
       color: var(--muted);
       font-size: 16px;
-      line-height: 1.6;
-      margin-bottom: 48px;
+      line-height: 1.65;
+      margin-bottom: 44px;
       max-width: 520px;
+      font-weight: 300;
     }
 
+    /* UPLOAD */
     .upload-zone {
       width: 100%;
-      border: 2px dashed var(--border);
+      border: 2px dashed var(--border-2);
       border-radius: 16px;
       padding: 48px 32px;
       text-align: center;
@@ -99,58 +119,31 @@
       background: var(--surface);
       position: relative;
     }
-
-    .upload-zone:hover,
-    .upload-zone.drag-over {
+    .upload-zone:hover, .upload-zone.drag-over {
       border-color: var(--accent);
-      background: #1a1e2a;
+      background: var(--accent-dim);
     }
-
     .upload-zone input[type="file"] {
-      position: absolute;
-      inset: 0;
-      opacity: 0;
-      cursor: pointer;
-      width: 100%;
-      height: 100%;
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
     }
-
-    .upload-icon {
-      font-size: 48px;
-      margin-bottom: 16px;
-      display: block;
-    }
-
-    .upload-label {
-      font-size: 18px;
-      font-weight: 600;
-      margin-bottom: 8px;
-    }
-
-    .upload-hint {
-      font-size: 13px;
-      color: var(--muted);
-    }
+    .upload-icon { font-size: 44px; margin-bottom: 14px; display: block; }
+    .upload-label { font-size: 17px; font-weight: 500; margin-bottom: 6px; color: var(--text); }
+    .upload-hint { font-size: 13px; color: var(--faint); font-weight: 300; }
 
     .file-selected {
       display: none;
       align-items: center;
       gap: 12px;
       background: var(--accent-dim);
-      border-radius: 8px;
+      border: 1px solid #c0d4f8;
+      border-radius: 10px;
       padding: 12px 16px;
-      margin-top: 20px;
+      margin-top: 16px;
       font-size: 14px;
+      width: 100%;
     }
-
     .file-selected.visible { display: flex; }
-
-    .file-name {
-      flex: 1;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
+    .file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
 
     .btn {
       display: inline-flex;
@@ -159,128 +152,191 @@
       padding: 14px 32px;
       border-radius: 10px;
       font-size: 16px;
-      font-weight: 600;
+      font-weight: 500;
       cursor: pointer;
       border: none;
       transition: opacity 0.2s, transform 0.1s;
-      text-decoration: none;
+      font-family: var(--sans);
     }
-
     .btn:active { transform: scale(0.98); }
-    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
+    .btn:disabled { opacity: 0.35; cursor: not-allowed; }
     .btn-primary {
       background: var(--accent);
       color: #fff;
       width: 100%;
       justify-content: center;
-      margin-top: 24px;
-      font-size: 17px;
+      margin-top: 20px;
     }
-
     .btn-primary:hover:not(:disabled) { opacity: 0.88; }
 
     .progress-wrap {
       display: none;
       flex-direction: column;
       gap: 10px;
-      margin-top: 24px;
+      margin-top: 20px;
       width: 100%;
     }
-
     .progress-wrap.visible { display: flex; }
-
-    .progress-bar-bg {
-      height: 6px;
-      border-radius: 3px;
-      background: var(--border);
-      overflow: hidden;
-    }
-
-    .progress-bar-fill {
-      height: 100%;
-      background: var(--accent);
-      border-radius: 3px;
-      width: 0%;
-      transition: width 0.3s ease;
-    }
-
-    .progress-status {
-      font-size: 13px;
-      color: var(--muted);
-      text-align: center;
-    }
+    .progress-bar-bg { height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; }
+    .progress-bar-fill { height: 100%; background: var(--accent); border-radius: 3px; width: 0%; transition: width 0.35s ease; }
+    .progress-status { font-size: 13px; color: var(--faint); text-align: center; font-weight: 300; }
 
     .error-box {
       display: none;
-      background: #2a1515;
-      border: 1px solid var(--red);
+      background: var(--red-bg);
+      border: 1px solid #f5c4bc;
       color: var(--red);
       border-radius: 10px;
-      padding: 14px 18px;
+      padding: 12px 16px;
       font-size: 14px;
-      margin-top: 16px;
+      margin-top: 14px;
       width: 100%;
     }
-
     .error-box.visible { display: block; }
 
+    .privacy-note {
+      font-size: 12px;
+      color: var(--faint);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 14px;
+      font-weight: 300;
+    }
+    .privacy-note svg { color: var(--green); flex-shrink: 0; }
+
+    /* FEATURES (Claude Code style, light) */
     .features {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 16px;
-      margin-top: 64px;
+      gap: 14px;
+      margin-top: 52px;
       width: 100%;
     }
-
     .feature {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 12px;
       padding: 20px;
     }
+    .feature-icon { font-size: 22px; margin-bottom: 10px; }
+    .feature-title { font-size: 14px; font-weight: 500; margin-bottom: 6px; color: var(--text); }
+    .feature-desc { font-size: 12px; color: var(--muted); line-height: 1.55; font-weight: 300; }
 
-    .feature-icon { font-size: 24px; margin-bottom: 10px; }
-
-    .feature-title {
-      font-size: 14px;
-      font-weight: 600;
-      margin-bottom: 6px;
-    }
-
-    .feature-desc {
-      font-size: 12px;
-      color: var(--muted);
-      line-height: 1.5;
-    }
-
-    footer {
-      padding: 24px;
-      font-size: 12px;
-      color: var(--muted);
-      border-top: 1px solid var(--border);
+    /* STATS */
+    .stats-bar {
+      display: flex;
       width: 100%;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .stat {
+      flex: 1;
       text-align: center;
+      padding: 24px 16px;
+      border-right: 1px solid var(--border);
+    }
+    .stat:last-child { border-right: none; }
+    .stat-n { font-family: var(--mono); font-size: 24px; font-weight: 500; display: block; margin-bottom: 4px; }
+    .stat-l { font-size: 12px; color: var(--faint); font-weight: 300; }
+
+    /* SECTIONS */
+    .full-section { width: 100%; padding: 64px 48px; }
+    .full-section-inner { max-width: 880px; margin: 0 auto; }
+    .section-label {
+      font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--faint); font-weight: 400; margin-bottom: 32px;
     }
 
-    @media (max-width: 600px) {
+    /* HOW IT WORKS */
+    .steps {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 1px; background: var(--border);
+      border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+    }
+    .step { background: var(--surface); padding: 24px 20px; }
+    .step-n { font-family: var(--mono); font-size: 11px; color: var(--faint); margin-bottom: 12px; }
+    .step-t { font-size: 14px; font-weight: 500; margin-bottom: 6px; }
+    .step-d { font-size: 13px; color: var(--muted); line-height: 1.6; font-weight: 300; }
+
+    /* CHECKS */
+    .checks-bg { background: var(--bg); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .layers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 28px; }
+    .layer { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 22px; }
+    .ltag {
+      font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em;
+      padding: 3px 9px; border-radius: 4px; display: inline-block;
+      margin-bottom: 14px; font-weight: 500;
+    }
+    .ltag.l1 { background: var(--red-bg); color: var(--red); }
+    .ltag.l2 { background: var(--amber-bg); color: var(--amber); }
+    .ltag.l3 { background: var(--green-bg); color: var(--green); }
+    .layer-t { font-size: 14px; font-weight: 500; margin-bottom: 12px; }
+    .layer ul { list-style: none; display: flex; flex-direction: column; gap: 7px; }
+    .layer li { font-size: 12.5px; color: var(--muted); font-weight: 300; line-height: 1.5; padding-left: 12px; position: relative; }
+    .layer li::before { content: ''; position: absolute; left: 0; top: 8px; width: 4px; height: 1px; background: var(--faint); }
+
+    /* PRIVACY */
+    .privacy-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 28px; }
+    .p-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+    .p-card-t { font-size: 13px; font-weight: 500; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+    .p-card-t svg { color: var(--green); }
+    .p-card p { font-size: 12.5px; color: var(--muted); line-height: 1.65; font-weight: 300; }
+    .privacy-quote { text-align: center; margin-top: 24px; font-size: 13px; color: var(--faint); font-style: italic; font-weight: 300; }
+
+    /* FOOTER */
+    footer {
+      padding: 22px 48px; font-size: 12px; color: var(--faint);
+      border-top: 1px solid var(--border); width: 100%;
+      display: flex; justify-content: space-between; align-items: center;
+      background: var(--surface); flex-wrap: wrap; gap: 12px;
+    }
+    .footer-links { display: flex; gap: 20px; }
+    .footer-links a { font-size: 12px; color: var(--faint); text-decoration: none; font-weight: 300; }
+    .footer-links a:hover { color: var(--text); }
+
+    /* ANIMATIONS */
+    @keyframes up { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+    .badge { animation: up 0.4s ease both; }
+    h1 { animation: up 0.4s 0.07s ease both; }
+    .subtitle { animation: up 0.4s 0.14s ease both; }
+    .upload-zone { animation: up 0.4s 0.21s ease both; }
+
+    @media (max-width: 760px) {
+      header { padding: 16px 20px; }
+      .full-section { padding: 48px 20px; }
+      .steps { grid-template-columns: 1fr 1fr; }
+      .layers { grid-template-columns: 1fr; }
+      .privacy-grid { grid-template-columns: 1fr; }
+      footer { padding: 18px 20px; flex-direction: column; align-items: flex-start; }
+    }
+    @media (max-width: 480px) {
       h1 { font-size: 30px; }
       .features { grid-template-columns: 1fr; }
+      .steps { grid-template-columns: 1fr; }
+      .stats-bar { flex-wrap: wrap; }
+      .stat { min-width: 50%; }
     }
   </style>
 </head>
 <body>
 
 <header>
-  <div class="logo">Veri<span>fi</span></div>
-  <div class="tagline">AI-Powered Real Estate Financial Audit</div>
+  <div class="logo">Verifi<span>.</span></div>
+  <div class="tagline">Real estate model audit · Free beta</div>
 </header>
 
 <main>
+  <div class="badge">
+    <span class="badge-dot"></span>
+    Now in beta — free for all models
+  </div>
+
   <h1>Audit your <em>financial model</em><br>in seconds</h1>
+
   <p class="subtitle">
-    Upload an Excel-based real estate underwriting model. Verifi analyzes assumptions,
-    flags errors, checks formulas, and delivers a structured audit report — powered by Claude AI.
+    Upload any real estate financial model. Verifi runs 35+ structural, accounting and economic checks and delivers a precise audit report — powered by Claude AI.
   </p>
 
   <div class="upload-zone" id="dropZone">
@@ -293,12 +349,10 @@
   <div class="file-selected" id="fileSelected">
     <span>📄</span>
     <span class="file-name" id="fileName"></span>
-    <span id="fileSize" style="color:var(--muted);font-size:12px;white-space:nowrap;"></span>
+    <span id="fileSize" style="color:var(--faint);font-size:12px;white-space:nowrap;"></span>
   </div>
 
-  <button class="btn btn-primary" id="analyzeBtn" disabled>
-    ✦ Analyze Model
-  </button>
+  <button class="btn btn-primary" id="analyzeBtn" disabled>✦ Analyze Model</button>
 
   <div class="progress-wrap" id="progressWrap">
     <div class="progress-bar-bg">
@@ -308,6 +362,11 @@
   </div>
 
   <div class="error-box" id="errorBox"></div>
+
+  <p class="privacy-note">
+    <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 1.5L2 3.5V7c0 2.485 2.14 4.5 5 5 2.86-.5 5-2.515 5-5V3.5L7 1.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M5 7l1.5 1.5L9 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Your file is deleted immediately after analysis. We never store your model.
+  </p>
 
   <div class="features">
     <div class="feature">
@@ -328,8 +387,122 @@
   </div>
 </main>
 
+<div class="stats-bar">
+  <div class="stat"><span class="stat-n">35+</span><p class="stat-l">checks per model</p></div>
+  <div class="stat"><span class="stat-n">&lt;60s</span><p class="stat-l">to full report</p></div>
+  <div class="stat"><span class="stat-n">3</span><p class="stat-l">verification layers</p></div>
+  <div class="stat"><span class="stat-n">$0</span><p class="stat-l">free during beta</p></div>
+</div>
+
+<div class="full-section">
+  <div class="full-section-inner">
+    <p class="section-label">How it works</p>
+    <div class="steps">
+      <div class="step">
+        <p class="step-n">01</p>
+        <p class="step-t">Upload your model</p>
+        <p class="step-d">Drop any .xlsx financial model. Any sector, any structure.</p>
+      </div>
+      <div class="step">
+        <p class="step-n">02</p>
+        <p class="step-t">35+ checks run</p>
+        <p class="step-d">Structural integrity, accounting identities, economic plausibility — all three layers.</p>
+      </div>
+      <div class="step">
+        <p class="step-n">03</p>
+        <p class="step-t">Precise audit report</p>
+        <p class="step-d">Every failed check shows the exact cell, what went wrong, and how to fix it.</p>
+      </div>
+      <div class="step">
+        <p class="step-n">04</p>
+        <p class="step-t">Impact on your IRR</p>
+        <p class="step-d">Each error is rated by impact on your return — fix what matters first.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="full-section checks-bg">
+  <div class="full-section-inner">
+    <p class="section-label">What Verifi checks</p>
+    <div class="layers">
+      <div class="layer">
+        <span class="ltag l1">Layer 1 · Structural</span>
+        <p class="layer-t">Is the model well-formed?</p>
+        <ul>
+          <li>Formula errors (#REF, #DIV/0, #NAME)</li>
+          <li>Hardcoded values in calculation cells</li>
+          <li>Circular references</li>
+          <li>Inputs sheet separation</li>
+          <li>Centralised toggle controls</li>
+          <li>Orphaned input cells</li>
+        </ul>
+      </div>
+      <div class="layer">
+        <span class="ltag l2">Layer 2 · Accounting</span>
+        <p class="layer-t">Does the maths close?</p>
+        <ul>
+          <li>Cash flow identity (period by period)</li>
+          <li>Debt drawdown = repayment</li>
+          <li>Sources = Uses</li>
+          <li>Interest fully repaid</li>
+          <li>Levered CF = Unlevered + debt schedule</li>
+          <li>Actual → forecast transition</li>
+        </ul>
+      </div>
+      <div class="layer">
+        <span class="ltag l3">Layer 3 · Economic</span>
+        <p class="layer-t">Do the numbers make sense?</p>
+        <ul>
+          <li>Yield on cost vs completion cap rate</li>
+          <li>Leverage uplift vs LTV / LTC</li>
+          <li>Return waterfall reconciliation</li>
+          <li>Income return vs ingoing yield</li>
+          <li>Capital growth vs rental growth</li>
+          <li>Development margin benchmarks</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="full-section">
+  <div class="full-section-inner">
+    <p class="section-label">Privacy & data</p>
+    <div class="privacy-grid">
+      <div class="p-card">
+        <p class="p-card-t">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1.5L2 3.5V7c0 2.485 2.14 4.5 5 5 2.86-.5 5-2.515 5-5V3.5L7 1.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+          File deleted immediately
+        </p>
+        <p>Your model is processed in memory and permanently deleted the moment your report is generated. No exceptions.</p>
+      </div>
+      <div class="p-card">
+        <p class="p-card-t">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.2"/><path d="M5 7l1.5 1.5L9 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          No numbers stored
+        </p>
+        <p>We record only which rules were triggered — never your project names, addresses, or financial data.</p>
+      </div>
+      <div class="p-card">
+        <p class="p-card-t">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2" y="5" width="10" height="7" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M4.5 5V4a2.5 2.5 0 015 0v1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+          Report expires in 24h
+        </p>
+        <p>Your audit report URL expires after 24 hours. Share it with your team while it's relevant.</p>
+      </div>
+    </div>
+    <p class="privacy-quote">"We see your model for 60 seconds. That's it."</p>
+  </div>
+</div>
+
 <footer>
-  Verifi &copy; 2026 — Built with Claude AI &amp; Vercel
+  <span>Verifi © 2026 — Built with Claude AI & Vercel</span>
+  <div class="footer-links">
+    <a href="mailto:hello@verifi.com.au">hello@verifi.com.au</a>
+    <a href="#">Privacy</a>
+    <a href="#">Feedback</a>
+  </div>
 </footer>
 
 <script>
@@ -356,14 +529,8 @@
     if (!file) return;
     const allowed = ['.xlsx', '.xls', '.xlsm'];
     const ext = '.' + file.name.split('.').pop().toLowerCase();
-    if (!allowed.includes(ext)) {
-      showError('Please upload an Excel file (.xlsx, .xls, or .xlsm).');
-      return;
-    }
-    if (file.size > 20 * 1024 * 1024) {
-      showError('File exceeds the 20 MB limit.');
-      return;
-    }
+    if (!allowed.includes(ext)) { showError('Please upload an Excel file (.xlsx, .xls, or .xlsm).'); return; }
+    if (file.size > 20 * 1024 * 1024) { showError('File exceeds the 20 MB limit.'); return; }
     selectedFile = file;
     fileName.textContent = file.name;
     fileSize.textContent = formatBytes(file.size);
@@ -373,50 +540,32 @@
   }
 
   fileInput.addEventListener('change', e => setFile(e.target.files[0]));
-
   dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
   dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-  dropZone.addEventListener('drop', e => {
-    e.preventDefault();
-    dropZone.classList.remove('drag-over');
-    setFile(e.dataTransfer.files[0]);
-  });
+  dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('drag-over'); setFile(e.dataTransfer.files[0]); });
 
-  function showError(msg) {
-    errorBox.textContent = msg;
-    errorBox.classList.add('visible');
-  }
-
-  function setProgress(pct, label) {
-    progressFill.style.width = pct + '%';
-    progressStatus.textContent = label;
-  }
+  function showError(msg) { errorBox.textContent = msg; errorBox.classList.add('visible'); }
+  function setProgress(pct, label) { progressFill.style.width = pct + '%'; progressStatus.textContent = label; }
 
   analyzeBtn.addEventListener('click', async () => {
     if (!selectedFile) return;
-
     analyzeBtn.disabled = true;
     progressWrap.classList.add('visible');
     errorBox.classList.remove('visible');
     setProgress(10, 'Uploading file…');
-
     const form = new FormData();
     form.append('file', selectedFile);
-
     try {
       setProgress(30, 'Parsing spreadsheet…');
       const res = await fetch('/api/analyze', { method: 'POST', body: form });
       setProgress(70, 'Analyzing with Claude AI…');
-
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Unknown error' }));
         throw new Error(err.error || `Server error ${res.status}`);
       }
-
       setProgress(95, 'Building report…');
       const data = await res.json();
       setProgress(100, 'Done!');
-
       sessionStorage.setItem('verifi_report', JSON.stringify(data));
       window.location.href = '/report';
     } catch (err) {
