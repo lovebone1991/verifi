@@ -35,6 +35,7 @@ export default async function handler(req, res) {
         'application/vnd.ms-excel.sheet.macroEnabled.12',
       ],
       addRandomSuffix: true,
+      validUntil: Date.now() + 5 * 60 * 1000, // 5 minutes
     });
 
     return res.status(200).json({ type: 'blob.generate-client-token', clientToken });
