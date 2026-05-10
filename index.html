@@ -556,6 +556,7 @@
     try {
       // Step 1: get a short-lived client token from our server
       setProgress(10, 'Uploading to secure storage…');
+      console.log('[verifi] step 1 — requesting token for:', selectedFile.name, selectedFile.type, selectedFile.size);
       const tokenRes = await fetch('/api/blob-upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -564,42 +565,53 @@
           payload: { pathname: selectedFile.name, multipart: false, callbackUrl: null, clientPayload: null },
         }),
       });
+      console.log('[verifi] step 1 — token response status:', tokenRes.status);
       if (!tokenRes.ok) {
         const e = await tokenRes.json().catch(() => ({}));
         throw new Error(e.error || `Token request failed (${tokenRes.status})`);
       }
-      const { clientToken } = await tokenRes.json();
+      const tokenData = await tokenRes.json();
+      console.log('[verifi] step 1 — token response keys:', Object.keys(tokenData));
+      const { clientToken } = tokenData;
       if (!clientToken) throw new Error('No client token returned from server');
+      console.log('[verifi] step 1 done ✓');
 
       // Step 2: PUT the file directly to Vercel Blob CDN — no SDK needed
       setProgress(25, 'Uploading file…');
-      const uploadRes = await fetch(
-        `https://blob.vercel-storage.com/${encodeURIComponent(selectedFile.name)}`,
-        {
-          method: 'PUT',
-          headers: {
-            'authorization': `Bearer ${clientToken}`,
-            'x-api-version': '7',
-            'x-content-type': selectedFile.type || 'application/octet-stream',
-          },
-          body: selectedFile,
-        }
-      );
+      const mimeType = selectedFile.type || 'application/octet-stream';
+      const putUrl = `https://blob.vercel-storage.com/${encodeURIComponent(selectedFile.name)}`;
+      console.log('[verifi] step 2 — PUT to:', putUrl, 'mime:', mimeType);
+      const uploadRes = await fetch(putUrl, {
+        method: 'PUT',
+        headers: {
+          'authorization': `Bearer ${clientToken}`,
+          'x-api-version': '7',
+          'content-type': mimeType,
+          'x-content-type': mimeType,
+        },
+        body: selectedFile,
+      });
+      console.log('[verifi] step 2 — upload response status:', uploadRes.status, uploadRes.statusText);
       if (!uploadRes.ok) {
         const errText = await uploadRes.text().catch(() => '');
+        console.error('[verifi] step 2 failed — body:', errText);
         throw new Error(`Blob upload failed (${uploadRes.status}): ${errText}`);
       }
-      const blob = await uploadRes.json();
-      if (!blob.url) throw new Error('Blob upload succeeded but returned no URL');
+      const blob = await uploadRes.json().catch(() => null);
+      console.log('[verifi] step 2 — blob result:', blob);
+      if (!blob || !blob.url) throw new Error('Blob upload succeeded but returned no URL');
       setProgress(45, 'Running 35+ model checks…');
+      console.log('[verifi] step 2 done ✓ url:', blob.url);
 
       // Step 3: pass blob URL to analyze — API fetches, processes, then deletes blob
+      console.log('[verifi] step 3 — POST /api/analyze');
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ blobUrl: blob.url }),
       });
       setProgress(75, 'Analyzing with Claude AI…');
+      console.log('[verifi] step 3 — analyze response status:', res.status);
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Unknown error' }));
@@ -609,9 +621,11 @@
       setProgress(95, 'Building report…');
       const data = await res.json();
       setProgress(100, 'Done!');
+      console.log('[verifi] step 3 done ✓ — navigating to report');
       sessionStorage.setItem('verifi_report', JSON.stringify(data));
       window.location.href = '/report';
     } catch (err) {
+      console.error('[verifi] caught error:', err);
       showError(err.message || 'Something went wrong. Please try again.');
       progressWrap.classList.remove('visible');
       analyzeBtn.disabled = false;
