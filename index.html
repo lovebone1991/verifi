@@ -505,9 +505,7 @@
   </div>
 </footer>
 
-<script type="module">
-  import { upload } from 'https://esm.sh/@vercel/blob/client';
-
+<script>
   const dropZone = document.getElementById('dropZone');
   const fileInput = document.getElementById('fileInput');
   const fileSelected = document.getElementById('fileSelected');
@@ -556,15 +554,46 @@
     errorBox.classList.remove('visible');
 
     try {
-      // Step 1: upload directly to Vercel Blob (bypasses function body limits)
+      // Step 1: get a short-lived client token from our server
       setProgress(10, 'Uploading to secure storage…');
-      const blob = await upload(selectedFile.name, selectedFile, {
-        access: 'public',
-        handleUploadUrl: '/api/blob-upload',
+      const tokenRes = await fetch('/api/blob-upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'blob.generate-client-token',
+          payload: { pathname: selectedFile.name, multipart: false, callbackUrl: null, clientPayload: null },
+        }),
       });
+      if (!tokenRes.ok) {
+        const e = await tokenRes.json().catch(() => ({}));
+        throw new Error(e.error || `Token request failed (${tokenRes.status})`);
+      }
+      const { clientToken } = await tokenRes.json();
+      if (!clientToken) throw new Error('No client token returned from server');
+
+      // Step 2: PUT the file directly to Vercel Blob CDN — no SDK needed
+      setProgress(25, 'Uploading file…');
+      const uploadRes = await fetch(
+        `https://blob.vercel-storage.com/${encodeURIComponent(selectedFile.name)}`,
+        {
+          method: 'PUT',
+          headers: {
+            'authorization': `Bearer ${clientToken}`,
+            'x-api-version': '7',
+            'x-content-type': selectedFile.type || 'application/octet-stream',
+          },
+          body: selectedFile,
+        }
+      );
+      if (!uploadRes.ok) {
+        const errText = await uploadRes.text().catch(() => '');
+        throw new Error(`Blob upload failed (${uploadRes.status}): ${errText}`);
+      }
+      const blob = await uploadRes.json();
+      if (!blob.url) throw new Error('Blob upload succeeded but returned no URL');
       setProgress(45, 'Running 35+ model checks…');
 
-      // Step 2: pass blob URL to analyze — API fetches, processes, then deletes blob
+      // Step 3: pass blob URL to analyze — API fetches, processes, then deletes blob
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
