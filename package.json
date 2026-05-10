@@ -4,13 +4,16 @@
   "description": "Real estate financial model audit tool",
   "type": "module",
   "scripts": {
-    "dev": "vercel dev"
+    "dev": "vercel dev",
+    "worker:deploy": "wrangler deploy",
+    "worker:dev": "wrangler dev"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",
-    "@vercel/blob": "^2.3.3",
-    "formidable": "^3.5.1",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
   },
   "engines": {
     "node": ">=18"

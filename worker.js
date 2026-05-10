@@ -1,14 +1,18 @@
-import Anthropic from '@anthropic-ai/sdk';
 import * as XLSX from 'xlsx';
-import { del } from '@vercel/blob';
+import Anthropic from '@anthropic-ai/sdk';
 
-export const config = {
-  api: {
-    responseLimit: '50mb',
-  },
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-const client = new Anthropic();
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...CORS, 'Content-Type': 'application/json' },
+  });
+}
 
 const SYSTEM_PROMPT = `You are Verifi, a financial model verification engine built by a CFA-qualified real estate investment professional with 15+ years experience reviewing residential development, commercial RE, industrial, BTR, PBSA, debt, and fund of funds models.
 
@@ -108,9 +112,9 @@ Return ONLY valid JSON:
   "scope": "This report checks structural and mathematical integrity. It does not validate whether assumptions reflect current market conditions. A clean Verifi report is necessary but not sufficient for a reliable model."
 }`;
 
-function extractModelData(buffer) {
-  const workbook = XLSX.read(buffer, {
-    type: 'buffer',
+function extractModelData(uint8) {
+  const workbook = XLSX.read(uint8, {
+    type: 'array',
     cellFormula: true,
     cellNF: false,
     sheetStubs: false,
@@ -120,23 +124,18 @@ function extractModelData(buffer) {
     sheetNames: workbook.SheetNames,
     totalSheets: workbook.SheetNames.length,
     sheets: {},
-    globalStats: {
-      totalRefErrors: 0,
-      totalHardcodes: 0,
-      sheetsWithErrors: [],
-    }
+    globalStats: { totalRefErrors: 0, totalHardcodes: 0, sheetsWithErrors: [] },
   };
 
   const priorityKeywords = [
     'summary', 'output', 'cashflow', 'cash flow', 'cf', 'irr', 'return',
     'input', 'assumption', 'debt', 'finance', 'financing', 's&u', 'sources',
-    'portfolio', 'venture', 'stage', 'dashboard', 'model', 'promote'
+    'portfolio', 'venture', 'stage', 'dashboard', 'model', 'promote',
   ];
 
-  const sheetsToAnalyse = workbook.SheetNames.filter(name => {
-    const lower = name.toLowerCase();
-    return priorityKeywords.some(k => lower.includes(k));
-  }).slice(0, 10);
+  const sheetsToAnalyse = workbook.SheetNames.filter(name =>
+    priorityKeywords.some(k => name.toLowerCase().includes(k))
+  ).slice(0, 10);
 
   const finalSheets = sheetsToAnalyse.length > 0
     ? sheetsToAnalyse
@@ -146,14 +145,7 @@ function extractModelData(buffer) {
     const ws = workbook.Sheets[name];
     if (!ws || !ws['!ref']) continue;
 
-    const data = {
-      refErrors: [],
-      hardcodes: [],
-      keyRows: {},
-      formulaCount: 0,
-      valueCount: 0,
-    };
-
+    const data = { refErrors: [], hardcodes: [], keyRows: {}, formulaCount: 0, valueCount: 0 };
     const range = XLSX.utils.decode_range(ws['!ref']);
     const maxRow = Math.min(range.e.r, 199);
     const maxCol = Math.min(range.e.c, 59);
@@ -170,25 +162,20 @@ function extractModelData(buffer) {
             data.refErrors.push({
               ref: `${name}!${addr}`,
               formula: cell.f.substring(0, 80),
-              iferrorWrapped: cell.f.includes('IFERROR')
+              iferrorWrapped: cell.f.includes('IFERROR'),
             });
           }
         } else if (cell.v !== undefined && cell.v !== null && cell.v !== '') {
           data.valueCount++;
           if (typeof cell.v === 'number' && Math.abs(cell.v) > 5000) {
-            data.hardcodes.push({
-              ref: `${name}!${addr}`,
-              value: Math.round(cell.v)
-            });
+            data.hardcodes.push({ ref: `${name}!${addr}`, value: Math.round(cell.v) });
           }
         }
 
-        if (r < 25 && c < 12) {
-          if (cell.v !== undefined && cell.v !== null) {
-            data.keyRows[addr] = typeof cell.v === 'number'
-              ? Math.round(cell.v * 100) / 100
-              : String(cell.v).substring(0, 50);
-          }
+        if (r < 25 && c < 12 && cell.v !== undefined && cell.v !== null) {
+          data.keyRows[addr] = typeof cell.v === 'number'
+            ? Math.round(cell.v * 100) / 100
+            : String(cell.v).substring(0, 50);
         }
       }
     }
@@ -201,12 +188,9 @@ function extractModelData(buffer) {
       valueCount: data.valueCount,
       keyRows: data.keyRows,
     };
-
     result.globalStats.totalRefErrors += data.refErrors.length;
     result.globalStats.totalHardcodes += data.hardcodes.length;
-    if (data.refErrors.length > 0) {
-      result.globalStats.sheetsWithErrors.push(name);
-    }
+    if (data.refErrors.length > 0) result.globalStats.sheetsWithErrors.push(name);
   }
 
   return result;
@@ -214,7 +198,7 @@ function extractModelData(buffer) {
 
 function generateReportHtml(report) {
   const now = new Date().toLocaleDateString('en-AU', {
-    day: 'numeric', month: 'long', year: 'numeric'
+    day: 'numeric', month: 'long', year: 'numeric',
   });
 
   const statusColor = { FAIL: '#b83224', WARN: '#7a5200', PASS: '#1a6b3c' };
@@ -258,13 +242,8 @@ function generateReportHtml(report) {
         .filter(([, v]) => v && v !== 'null')
         .map(([k, v]) => {
           const labels = {
-            unleveredIRR: 'Unlev IRR',
-            leveredIRR: 'E-IRR',
-            devMargin: 'Dev Margin',
-            yieldOnCost: 'Yield on Cost',
-            capRate: 'Cap Rate',
-            ltc: 'LTC',
-            holdPeriod: 'Hold Period'
+            unleveredIRR: 'Unlev IRR', leveredIRR: 'E-IRR', devMargin: 'Dev Margin',
+            yieldOnCost: 'Yield on Cost', capRate: 'Cap Rate', ltc: 'LTC', holdPeriod: 'Hold Period',
           };
           return `<div style="background:#f5f4ef;border-radius:8px;padding:10px 12px;text-align:center">
             <div style="font-size:11px;color:#9a9990;margin-bottom:3px">${labels[k] || k}</div>
@@ -331,68 +310,62 @@ function generateReportHtml(report) {
   `;
 }
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const { blobUrl } = req.body || {};
-  if (!blobUrl) {
-    return res.status(400).json({ error: 'No blobUrl provided' });
-  }
-
-  try {
-    const blobRes = await fetch(blobUrl);
-    if (!blobRes.ok) throw new Error(`Blob fetch failed: ${blobRes.status}`);
-    const buffer = Buffer.from(await blobRes.arrayBuffer());
-
-    const modelData = extractModelData(buffer);
-
-    const compactSummary = {
-      sheetNames: modelData.sheetNames,
-      totalSheets: modelData.totalSheets,
-      globalStats: modelData.globalStats,
-      sheets: {}
-    };
-
-    for (const [name, data] of Object.entries(modelData.sheets)) {
-      compactSummary.sheets[name] = {
-        refErrorCount: data.refErrorCount,
-        refErrorSamples: data.refErrorSamples.slice(0, 4),
-        hardcodeSamples: data.hardcodeSamples.slice(0, 5),
-        formulaCount: data.formulaCount,
-        keyRows: data.keyRows,
-      };
+export default {
+  async fetch(request, env) {
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: CORS });
+    }
+    if (request.method !== 'POST') {
+      return json({ error: 'Method not allowed' }, 405);
     }
 
-    const message = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 4000,
-      system: SYSTEM_PROMPT,
-      messages: [{
-        role: 'user',
-        content: `Please audit this real estate financial model and return the JSON report.
+    try {
+      const formData = await request.formData();
+      const file = formData.get('file');
+      if (!file || typeof file === 'string') {
+        return json({ error: 'No file uploaded' }, 400);
+      }
 
-Model structure extracted from Excel:
-${JSON.stringify(compactSummary, null, 2)}`
-      }]
-    });
+      const uint8 = new Uint8Array(await file.arrayBuffer());
+      const modelData = extractModelData(uint8);
 
-    // Delete blob immediately after extraction
-    await del(blobUrl);
+      const compactSummary = {
+        sheetNames: modelData.sheetNames,
+        totalSheets: modelData.totalSheets,
+        globalStats: modelData.globalStats,
+        sheets: {},
+      };
+      for (const [name, data] of Object.entries(modelData.sheets)) {
+        compactSummary.sheets[name] = {
+          refErrorCount: data.refErrorCount,
+          refErrorSamples: data.refErrorSamples.slice(0, 4),
+          hardcodeSamples: data.hardcodeSamples.slice(0, 5),
+          formulaCount: data.formulaCount,
+          keyRows: data.keyRows,
+        };
+      }
 
-    const text = message.content[0].text;
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('No JSON in Claude response');
+      const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+      const message = await client.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4000,
+        system: SYSTEM_PROMPT,
+        messages: [{
+          role: 'user',
+          content: `Please audit this real estate financial model and return the JSON report.\n\nModel structure extracted from Excel:\n${JSON.stringify(compactSummary, null, 2)}`,
+        }],
+      });
 
-    const report = JSON.parse(jsonMatch[0]);
-    const reportHtml = generateReportHtml(report);
+      const text = message.content[0].text;
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error('No JSON in Claude response');
 
-    res.status(200).json({ reportHtml });
+      const report = JSON.parse(jsonMatch[0]);
+      return json({ reportHtml: generateReportHtml(report) });
 
-  } catch (err) {
-    try { await del(blobUrl); } catch {}
-    console.error('Verifi analyze error:', err);
-    res.status(500).json({ error: 'Analysis failed', detail: err.message });
-  }
-}
+    } catch (err) {
+      console.error('Worker error:', err.message);
+      return json({ error: 'Analysis failed', detail: err.message }, 500);
+    }
+  },
+};

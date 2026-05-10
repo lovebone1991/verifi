@@ -1,17 +1,6 @@
 {
   "version": 2,
-  "functions": {
-    "api/analyze.js": {
-      "maxDuration": 60,
-      "memory": 1024
-    },
-    "api/blob-upload.js": {
-      "maxDuration": 30,
-      "memory": 1024
-    }
-  },
   "routes": [
-    { "src": "/api/(.*)", "dest": "/api/$1" },
     { "src": "/report", "dest": "/report.html" },
     { "src": "/", "dest": "/index.html" }
   ]

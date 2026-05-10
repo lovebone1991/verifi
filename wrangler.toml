@@ -1,0 +1,10 @@
+name = "verifi-analyze"
+main = "worker.js"
+compatibility_date = "2025-05-11"
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
+
+# Set secrets via CLI — never commit these:
+#   wrangler secret put ANTHROPIC_API_KEY

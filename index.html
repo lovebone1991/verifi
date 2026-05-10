@@ -547,6 +547,8 @@
   function showError(msg) { errorBox.textContent = msg; errorBox.classList.add('visible'); }
   function setProgress(pct, label) { progressFill.style.width = pct + '%'; progressStatus.textContent = label; }
 
+  const WORKER_URL = 'https://verifi-analyze.YOUR_ACCOUNT.workers.dev';
+
   analyzeBtn.addEventListener('click', async () => {
     if (!selectedFile) return;
     analyzeBtn.disabled = true;
@@ -554,31 +556,16 @@
     errorBox.classList.remove('visible');
 
     try {
-      // Step 1: upload file to our server → server streams it to Vercel Blob
-      setProgress(20, 'Uploading to secure storage…');
+      setProgress(20, 'Uploading model…');
       const form = new FormData();
       form.append('file', selectedFile);
-      const uploadRes = await fetch('/api/blob-upload', { method: 'POST', body: form });
-      if (!uploadRes.ok) {
-        const e = await uploadRes.json().catch(() => ({}));
-        throw new Error(e.error || `Upload failed (${uploadRes.status})`);
-      }
-      const { url: blobUrl } = await uploadRes.json();
-      if (!blobUrl) throw new Error('Upload succeeded but returned no URL');
       setProgress(45, 'Running 35+ model checks…');
-
-      // Step 2: pass blob URL to analyze — API fetches, processes, then deletes blob
-      const res = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ blobUrl }),
-      });
+      const res = await fetch(WORKER_URL, { method: 'POST', body: form });
       setProgress(75, 'Analyzing with Claude AI…');
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Unknown error' }));
         throw new Error(err.error || `Server error ${res.status}`);
       }
-
       setProgress(95, 'Building report…');
       const data = await res.json();
       setProgress(100, 'Done!');
