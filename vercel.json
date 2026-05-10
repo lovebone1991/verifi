@@ -6,7 +6,8 @@
       "memory": 1024
     },
     "api/blob-upload.js": {
-      "maxDuration": 10
+      "maxDuration": 30,
+      "memory": 1024
     }
   },
   "routes": [

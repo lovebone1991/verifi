@@ -1,4 +1,12 @@
-import { generateClientTokenFromReadWriteToken } from '@vercel/blob/client';
+import { put } from '@vercel/blob';
+import formidable from 'formidable';
+import fs from 'fs';
+
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -6,41 +14,37 @@ export default async function handler(req, res) {
   }
 
   if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    console.error('blob-upload: BLOB_READ_WRITE_TOKEN is not set');
     return res.status(500).json({
-      error: 'Blob store not configured — add BLOB_READ_WRITE_TOKEN to your environment variables.',
+      error: 'Blob store not configured — add BLOB_READ_WRITE_TOKEN to your environment.',
     });
   }
 
+  const form = formidable({ maxFileSize: 50 * 1024 * 1024 });
+  let filePath = null;
+
   try {
-    const body = req.body;
+    const [, files] = await form.parse(req);
+    const file = Array.isArray(files.file) ? files.file[0] : files.file;
+    if (!file) return res.status(400).json({ error: 'No file uploaded' });
 
-    // After upload the client POSTs blob.upload-completed — acknowledge and return
-    if (body?.type !== 'blob.generate-client-token') {
-      return res.status(200).json({ type: body?.type, response: 'ok' });
-    }
+    filePath = file.filepath;
 
-    const { pathname } = body.payload ?? {};
-    if (!pathname) {
-      return res.status(400).json({ error: 'Missing pathname in payload' });
-    }
+    const blob = await put(
+      file.originalFilename || 'model.xlsx',
+      fs.createReadStream(filePath),
+      {
+        access: 'public',
+        contentType: file.mimetype || 'application/octet-stream',
+      }
+    );
 
-    const clientToken = await generateClientTokenFromReadWriteToken({
-      token: process.env.BLOB_READ_WRITE_TOKEN,
-      pathname,
-      maximumSizeInBytes: 50 * 1024 * 1024,
-      allowedContentTypes: [
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'application/vnd.ms-excel',
-        'application/vnd.ms-excel.sheet.macroEnabled.12',
-      ],
-      addRandomSuffix: true,
-      validUntil: Date.now() + 5 * 60 * 1000, // 5 minutes
-    });
-
-    return res.status(200).json({ type: 'blob.generate-client-token', clientToken });
+    return res.status(200).json({ url: blob.url });
   } catch (err) {
     console.error('blob-upload error:', err.message);
     return res.status(500).json({ error: err.message });
+  } finally {
+    if (filePath) {
+      try { fs.unlinkSync(filePath); } catch {}
+    }
   }
 }
