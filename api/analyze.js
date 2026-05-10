@@ -1,11 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import * as XLSX from 'xlsx';
-import formidable from 'formidable';
-import fs from 'fs';
+import { del } from '@vercel/blob';
 
 export const config = {
   api: {
-    bodyParser: false,
     responseLimit: '50mb',
   },
 };
@@ -110,9 +108,9 @@ Return ONLY valid JSON:
   "scope": "This report checks structural and mathematical integrity. It does not validate whether assumptions reflect current market conditions. A clean Verifi report is necessary but not sufficient for a reliable model."
 }`;
 
-function extractModelData(filePath) {
-  const workbook = XLSX.readFile(filePath, {
-    type: 'file',
+function extractModelData(buffer) {
+  const workbook = XLSX.read(buffer, {
+    type: 'buffer',
     cellFormula: true,
     cellNF: false,
     sheetStubs: false,
@@ -129,7 +127,6 @@ function extractModelData(filePath) {
     }
   };
 
-  // Priority sheets to analyse deeply
   const priorityKeywords = [
     'summary', 'output', 'cashflow', 'cash flow', 'cf', 'irr', 'return',
     'input', 'assumption', 'debt', 'finance', 'financing', 's&u', 'sources',
@@ -141,7 +138,6 @@ function extractModelData(filePath) {
     return priorityKeywords.some(k => lower.includes(k));
   }).slice(0, 10);
 
-  // If no priority sheets found, take first 8
   const finalSheets = sheetsToAnalyse.length > 0
     ? sheetsToAnalyse
     : workbook.SheetNames.slice(0, 8);
@@ -187,7 +183,6 @@ function extractModelData(filePath) {
           }
         }
 
-        // Capture first 25 rows for context
         if (r < 25 && c < 12) {
           if (cell.v !== undefined && cell.v !== null) {
             data.keyRows[addr] = typeof cell.v === 'number'
@@ -341,25 +336,18 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const form = formidable({
-    maxFileSize: 25 * 1024 * 1024,
-    keepExtensions: true,
-  });
-
-  let filePath = null;
+  const { blobUrl } = req.body || {};
+  if (!blobUrl) {
+    return res.status(400).json({ error: 'No blobUrl provided' });
+  }
 
   try {
-    const [, files] = await form.parse(req);
-    const file = Array.isArray(files.file) ? files.file[0] : files.file;
+    const blobRes = await fetch(blobUrl);
+    if (!blobRes.ok) throw new Error(`Blob fetch failed: ${blobRes.status}`);
+    const buffer = Buffer.from(await blobRes.arrayBuffer());
 
-    if (!file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
+    const modelData = extractModelData(buffer);
 
-    filePath = file.filepath;
-    const modelData = extractModelData(filePath);
-
-    // Build compact summary for Claude (avoid sending too much data)
     const compactSummary = {
       sheetNames: modelData.sheetNames,
       totalSheets: modelData.totalSheets,
@@ -390,11 +378,8 @@ ${JSON.stringify(compactSummary, null, 2)}`
       }]
     });
 
-    // Clean up file immediately
-    if (filePath && fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-      filePath = null;
-    }
+    // Delete blob immediately after extraction
+    await del(blobUrl);
 
     const text = message.content[0].text;
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -406,10 +391,7 @@ ${JSON.stringify(compactSummary, null, 2)}`
     res.status(200).json({ reportHtml });
 
   } catch (err) {
-    // Always clean up file
-    if (filePath && fs.existsSync(filePath)) {
-      try { fs.unlinkSync(filePath); } catch {}
-    }
+    try { await del(blobUrl); } catch {}
     console.error('Verifi analyze error:', err);
     res.status(500).json({ error: 'Analysis failed', detail: err.message });
   }

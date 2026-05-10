@@ -4,6 +4,9 @@
     "api/analyze.js": {
       "maxDuration": 60,
       "memory": 1024
+    },
+    "api/blob-upload.js": {
+      "maxDuration": 10
     }
   },
   "routes": [

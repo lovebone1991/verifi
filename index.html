@@ -343,7 +343,7 @@
     <input type="file" id="fileInput" accept=".xlsx,.xls,.xlsm" />
     <span class="upload-icon">📊</span>
     <div class="upload-label">Drop your Excel model here</div>
-    <div class="upload-hint">Supports .xlsx, .xls, .xlsm — up to 20 MB</div>
+    <div class="upload-hint">Supports .xlsx, .xls, .xlsm — up to 50 MB</div>
   </div>
 
   <div class="file-selected" id="fileSelected">
@@ -505,7 +505,9 @@
   </div>
 </footer>
 
-<script>
+<script type="module">
+  import { upload } from 'https://esm.sh/@vercel/blob/client';
+
   const dropZone = document.getElementById('dropZone');
   const fileInput = document.getElementById('fileInput');
   const fileSelected = document.getElementById('fileSelected');
@@ -530,7 +532,7 @@
     const allowed = ['.xlsx', '.xls', '.xlsm'];
     const ext = '.' + file.name.split('.').pop().toLowerCase();
     if (!allowed.includes(ext)) { showError('Please upload an Excel file (.xlsx, .xls, or .xlsm).'); return; }
-    if (file.size > 20 * 1024 * 1024) { showError('File exceeds the 20 MB limit.'); return; }
+    if (file.size > 50 * 1024 * 1024) { showError('File exceeds the 50 MB limit.'); return; }
     selectedFile = file;
     fileName.textContent = file.name;
     fileSize.textContent = formatBytes(file.size);
@@ -552,17 +554,29 @@
     analyzeBtn.disabled = true;
     progressWrap.classList.add('visible');
     errorBox.classList.remove('visible');
-    setProgress(10, 'Uploading file…');
-    const form = new FormData();
-    form.append('file', selectedFile);
+
     try {
-      setProgress(30, 'Parsing spreadsheet…');
-      const res = await fetch('/api/analyze', { method: 'POST', body: form });
-      setProgress(70, 'Analyzing with Claude AI…');
+      // Step 1: upload directly to Vercel Blob (bypasses function body limits)
+      setProgress(10, 'Uploading to secure storage…');
+      const blob = await upload(selectedFile.name, selectedFile, {
+        access: 'public',
+        handleUploadUrl: '/api/blob-upload',
+      });
+      setProgress(45, 'Running 35+ model checks…');
+
+      // Step 2: pass blob URL to analyze — API fetches, processes, then deletes blob
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blobUrl: blob.url }),
+      });
+      setProgress(75, 'Analyzing with Claude AI…');
+
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Unknown error' }));
         throw new Error(err.error || `Server error ${res.status}`);
       }
+
       setProgress(95, 'Building report…');
       const data = await res.json();
       setProgress(100, 'Done!');
