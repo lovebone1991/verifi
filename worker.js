@@ -2,9 +2,10 @@ import * as XLSX from 'xlsx';
 import Anthropic from '@anthropic-ai/sdk';
 
 const CORS = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': 'https://verifi-seven.vercel.app',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
+  'Vary': 'Origin',
 };
 
 function json(data, status = 200) {
