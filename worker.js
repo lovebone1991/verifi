@@ -311,62 +311,73 @@ function generateReportHtml(report) {
   `;
 }
 
+async function handleRequest(request, env) {
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed' }, 405);
+  }
+
+  const formData = await request.formData();
+  const file = formData.get('file');
+  if (!file || typeof file === 'string') {
+    return json({ error: 'No file uploaded' }, 400);
+  }
+
+  const uint8 = new Uint8Array(await file.arrayBuffer());
+  const modelData = extractModelData(uint8);
+
+  const compactSummary = {
+    sheetNames: modelData.sheetNames,
+    totalSheets: modelData.totalSheets,
+    globalStats: modelData.globalStats,
+    sheets: {},
+  };
+  for (const [name, data] of Object.entries(modelData.sheets)) {
+    compactSummary.sheets[name] = {
+      refErrorCount: data.refErrorCount,
+      refErrorSamples: data.refErrorSamples.slice(0, 4),
+      hardcodeSamples: data.hardcodeSamples.slice(0, 5),
+      formulaCount: data.formulaCount,
+      keyRows: data.keyRows,
+    };
+  }
+
+  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+  const message = await client.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 4000,
+    system: SYSTEM_PROMPT,
+    messages: [{
+      role: 'user',
+      content: `Please audit this real estate financial model and return the JSON report.\n\nModel structure extracted from Excel:\n${JSON.stringify(compactSummary, null, 2)}`,
+    }],
+  });
+
+  const text = message.content[0].text;
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('No JSON in Claude response');
+
+  const report = JSON.parse(jsonMatch[0]);
+  return json({ reportHtml: generateReportHtml(report) });
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: CORS });
-    }
-    if (request.method !== 'POST') {
-      return json({ error: 'Method not allowed' }, 405);
+      return new Response(null, { status: 200, headers: CORS });
     }
 
     try {
-      const formData = await request.formData();
-      const file = formData.get('file');
-      if (!file || typeof file === 'string') {
-        return json({ error: 'No file uploaded' }, 400);
-      }
-
-      const uint8 = new Uint8Array(await file.arrayBuffer());
-      const modelData = extractModelData(uint8);
-
-      const compactSummary = {
-        sheetNames: modelData.sheetNames,
-        totalSheets: modelData.totalSheets,
-        globalStats: modelData.globalStats,
-        sheets: {},
-      };
-      for (const [name, data] of Object.entries(modelData.sheets)) {
-        compactSummary.sheets[name] = {
-          refErrorCount: data.refErrorCount,
-          refErrorSamples: data.refErrorSamples.slice(0, 4),
-          hardcodeSamples: data.hardcodeSamples.slice(0, 5),
-          formulaCount: data.formulaCount,
-          keyRows: data.keyRows,
-        };
-      }
-
-      const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
-      const message = await client.messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 4000,
-        system: SYSTEM_PROMPT,
-        messages: [{
-          role: 'user',
-          content: `Please audit this real estate financial model and return the JSON report.\n\nModel structure extracted from Excel:\n${JSON.stringify(compactSummary, null, 2)}`,
-        }],
-      });
-
-      const text = message.content[0].text;
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error('No JSON in Claude response');
-
-      const report = JSON.parse(jsonMatch[0]);
-      return json({ reportHtml: generateReportHtml(report) });
-
+      const response = await handleRequest(request, env);
+      // Ensure CORS headers are on every response
+      const headers = new Headers(response.headers);
+      for (const [k, v] of Object.entries(CORS)) headers.set(k, v);
+      return new Response(response.body, { status: response.status, headers });
     } catch (err) {
       console.error('Worker error:', err.message);
-      return json({ error: 'Analysis failed', detail: err.message }, 500);
+      return new Response(JSON.stringify({ error: 'Analysis failed', detail: err.message }), {
+        status: 500,
+        headers: { ...CORS, 'Content-Type': 'application/json' },
+      });
     }
   },
 };
