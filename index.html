@@ -601,13 +601,13 @@
         scanWorker.postMessage({ uint8, fileName: selectedFile.name });
       });
 
-      // ── Build compact summary to send to Cloudflare Worker ────────────────
+      // ── Build full summary to send to Cloudflare Worker ────────────────────
       setProgress(58, 'Running 100+ model checks…');
 
       const compactSummary = {
         sheetNames: modelData.sheetNames,
         totalSheets: modelData.totalSheets,
-        namedRanges: modelData.namedRanges || [],
+        namedRanges: (modelData.namedRanges || []).slice(0, 30),
         sheetDependencies: modelData.sheetDependencies || {},
         globalStats: modelData.globalStats,
         sheets: {},
@@ -616,16 +616,16 @@
       for (const [name, data] of Object.entries(modelData.sheets)) {
         compactSummary.sheets[name] = {
           dimensions: data.dimensions,
-          refErrorCount: data.refErrors.length,
-          refErrorSamples: data.refErrors.slice(0, 8),
-          hardcodeSamples: data.hardcodes.slice(0, 10),
-          checkRowFailures: data.checkRows || [],
+          refErrorCount: (data.refErrors || []).length,
+          refErrorSamples: (data.refErrors || []).slice(0, 10),
+          hardcodeSamples: (data.hardcodes || []).slice(0, 15),
+          checkRowFailures: (data.checkRows || []).slice(0, 10),
           formulaCount: data.formulaCount,
           valueCount: data.valueCount,
-          hiddenRows: data.hiddenRows.length,
-          hiddenCols: data.hiddenCols.length,
-          crossSheetRefs: data.crossSheetRefs || [],
-          keyRows: data.keyRows,
+          hiddenRows: (data.hiddenRows || []).length,
+          hiddenCols: (data.hiddenCols || []).length,
+          crossSheetRefs: (data.crossSheetRefs || []).slice(0, 15),
+          keyRows: data.keyRows || {},
         };
       }
 

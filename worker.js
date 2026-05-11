@@ -112,7 +112,7 @@ Return ONLY valid JSON:
 }
 
 MARKET BENCHMARK INSTRUCTIONS:
-- If CURRENT MARKET BENCHMARKS are provided in the user message, use them in your economic findings (Layer 3)
+          marketContext = '\n\nCURRENT MARKET BENCHMARKS (live web search, ' + new Date().toLocaleDateString('en-AU') + ' - cite sources in findings):\n' + snippets.join('\n---\n');
 - When referencing market data, include the source URL and date in the finding description like: "(Source: [URL], [date])"
 - If no live data is available for a specific metric, use your training knowledge but note it as "based on historical market data"
 - Prioritise live sourced data over training knowledge for any economic benchmarking
@@ -302,12 +302,7 @@ Sources: ${sources}`;
           .filter(Boolean);
 
         if (snippets.length > 0) {
-          marketContext = `
-
-CURRENT MARKET BENCHMARKS (live web search, ${new Date().toLocaleDateString('en-AU')} — cite sources in findings):
-${snippets.join('
----
-')}`;
+          marketContext = '\n\nCURRENT MARKET BENCHMARKS (live web search, ' + new Date().toLocaleDateString('en-AU') + ' - cite sources in findings):\n' + snippets.join('\n---\n');
         }
       }
     }
