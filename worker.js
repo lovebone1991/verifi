@@ -102,12 +102,29 @@ Return ONLY valid JSON:
   "keyMetrics": {
     "unleveredIRR": "string or null",
     "leveredIRR": "string or null",
-    "devMargin": "string or null",
-    "yieldOnCost": "string or null",
+    "devMargin": "string or null (Dev models only)",
+    "yieldOnCost": "string or null (Dev/PBSA models only)",
     "capRate": "string or null",
-    "ltc": "string or null",
-    "holdPeriod": "string or null"
+    "ltc": "string or null (Dev models only)",
+    "ltv": "string or null (Core Hold/Fund models only)",
+    "icr": "string or null (Core Hold/Fund models only)",
+    "wale": "string or null (Core Hold models only)",
+    "passingYield": "string or null (Core Hold models only)",
+    "occupancy": "string or null (BTR/PBSA models only)",
+    "distributionYield": "string or null (Fund models only)",
+    "navPerUnit": "string or null (Fund models only)",
+    "holdPeriod": "string or null",
+    "revenuePerSqm": "string or null (where relevant)"
   },
+
+DYNAMIC METRICS RULE — only populate metrics relevant to the identified model type:
+- Core Hold: unleveredIRR, leveredIRR, capRate, passingYield, wale, ltv, icr, holdPeriod
+- Dev-Sell: devMargin, ltc, revenuePerSqm, holdPeriod
+- Dev-Hold-Sell: unleveredIRR, leveredIRR, devMargin, yieldOnCost, capRate, ltc, holdPeriod
+- BTR: unleveredIRR, leveredIRR, capRate, occupancy, yieldOnCost, holdPeriod
+- PBSA: yieldOnCost, occupancy, capRate, holdPeriod
+- Fund: leveredIRR, distributionYield, navPerUnit, ltv, holdPeriod
+Set all non-relevant metrics to null.
   "scope": "This report checks structural and mathematical integrity. Where current market benchmarks were available, findings include live sourced data with citations. A clean Verifi report is necessary but not sufficient for a reliable model."
 }
 
@@ -165,7 +182,10 @@ function generateReportHtml(report) {
         .map(([k, v]) => {
           const labels = {
             unleveredIRR: 'Unlev IRR', leveredIRR: 'E-IRR', devMargin: 'Dev Margin',
-            yieldOnCost: 'Yield on Cost', capRate: 'Cap Rate', ltc: 'LTC', holdPeriod: 'Hold Period',
+            yieldOnCost: 'Yield on Cost', capRate: 'Cap Rate', ltc: 'LTC', ltv: 'LTV',
+            icr: 'ICR', wale: 'WALE', passingYield: 'Passing Yield', occupancy: 'Occupancy',
+            distributionYield: 'Distribution Yield', navPerUnit: 'NAV / Unit',
+            holdPeriod: 'Hold Period', revenuePerSqm: 'Revenue / sqm',
           };
           return `<div style="background:#f5f4ef;border-radius:8px;padding:10px 12px;text-align:center">
             <div style="font-size:11px;color:#9a9990;margin-bottom:3px">${labels[k] || k}</div>
@@ -223,12 +243,12 @@ function generateReportHtml(report) {
     ${failFindings.map(findingHtml).join('')}
     ${passFindings.map(findingHtml).join('')}
 
+    <p style="font-size:11px;color:#9a9990;line-height:1.7;font-style:italic;border-top:1px solid #dddcd4;padding-top:16px;margin-bottom:20px">${report.scope}</p>
+
     <div style="background:white;border:1px solid #dddcd4;border-radius:12px;padding:20px;text-align:center;margin-bottom:20px">
       <p style="font-size:13px;color:#5a5a56;margin-bottom:14px">Found something we missed? Your feedback improves Verifi.</p>
       <a href="mailto:hello@verifi.com.au?subject=Verifi Feedback" style="display:inline-block;padding:8px 20px;border:1px solid #dddcd4;border-radius:8px;font-size:13px;color:#0e0e0c;text-decoration:none">Send feedback</a>
     </div>
-
-    <p style="font-size:11px;color:#9a9990;line-height:1.7;font-style:italic;border-top:1px solid #dddcd4;padding-top:16px">${report.scope}</p>
   `;
 }
 

@@ -442,6 +442,7 @@
 
     const bar = document.createElement('div');
     bar.className = 'fix-bar';
+    bar.style.marginBottom = '20px';
     bar.innerHTML = `
       <span class="fix-bar-label">After reviewing this report, did you go fix any of the issues?</span>
       <div class="fix-options">
@@ -450,7 +451,14 @@
       </div>
       <span class="fix-thanks visible" style="display:none">Thanks — good to know</span>
     `;
-    container.appendChild(bar);
+    // Insert before the last 2 elements (scope text + send feedback card)
+    const children = container.children;
+    const insertBefore = children.length >= 2 ? children[children.length - 2] : null;
+    if (insertBefore) {
+      container.insertBefore(bar, insertBefore);
+    } else {
+      container.appendChild(bar);
+    }
 
     bar.querySelectorAll('.fix-btn').forEach(btn => {
       btn.addEventListener('click', () => {
