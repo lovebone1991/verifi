@@ -157,6 +157,40 @@
     .reason-btn:hover { border-color: #aaa; color: var(--text); }
     .reason-btn.selected { background: #fdf0ee; border-color: #f5c4bc; color: var(--red); }
 
+    /* Free text input for "Other" reason */
+    .reason-text-wrap {
+      display: none;
+      margin-top: 6px;
+    }
+    .reason-text-wrap.visible { display: flex; gap: 6px; align-items: flex-start; }
+    .reason-text {
+      flex: 1;
+      font-size: 12px;
+      font-family: var(--sans);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      background: var(--bg);
+      color: var(--text);
+      resize: none;
+      min-height: 52px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .reason-text:focus { border-color: #aaa; }
+    .reason-text-submit {
+      font-size: 11px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--text);
+      color: #fff;
+      cursor: pointer;
+      font-family: var(--sans);
+      white-space: nowrap;
+      align-self: flex-end;
+    }
+
     /* Fix confirmation bar at bottom of report */
     .fix-bar {
       background: var(--surface);
@@ -269,6 +303,10 @@
                 <button class="reason-btn" data-reason="unclear">Description is unclear</button>
                 <button class="reason-btn" data-reason="other">Other</button>
               </div>
+              <div class="reason-text-wrap">
+                <textarea class="reason-text" placeholder="Tell us what was wrong…" rows="2"></textarea>
+                <button class="reason-text-submit">Submit</button>
+              </div>
             </div>
           `;
 
@@ -293,22 +331,34 @@
             keyMetrics: context.keyMetrics,
           };
 
+          // Track current vote state — allows changing vote
+          let currentVote = null;
+
           widget.querySelectorAll('.feedback-btn').forEach(btn => {
             btn.addEventListener('click', () => {
               const helpful = btn.dataset.helpful === 'true';
+
+              // Allow changing vote — reset all buttons
               widget.querySelectorAll('.feedback-btn').forEach(b => {
-                b.disabled = true;
                 b.classList.remove('voted-yes', 'voted-no');
               });
               btn.classList.add(helpful ? 'voted-yes' : 'voted-no');
               widget.querySelector('.feedback-thanks').classList.add('visible');
 
-              // Send initial feedback
+              currentVote = helpful;
+
+              // Send feedback (overwrites previous if changed)
               sendFeedback({ ...basePayload, helpful, reason: null });
 
-              // Show reason selector only for thumbs down
+              // Show/hide reason selector based on vote
+              const reasonEl = widget.querySelector('.feedback-reason');
               if (!helpful) {
-                widget.querySelector('.feedback-reason').classList.add('visible');
+                reasonEl.classList.add('visible');
+              } else {
+                reasonEl.classList.remove('visible');
+                // Reset reason state if switching to yes
+                widget.querySelectorAll('.reason-btn').forEach(b => b.classList.remove('selected'));
+                widget.querySelector('.reason-text-wrap').classList.remove('visible');
               }
             });
           });
@@ -319,9 +369,30 @@
               widget.querySelectorAll('.reason-btn').forEach(b => b.classList.remove('selected'));
               btn.classList.add('selected');
               const reason = btn.dataset.reason;
-              sendFeedback({ ...basePayload, helpful: false, reason });
+
+              // Show text input only for "Other"
+              const textWrap = widget.querySelector('.reason-text-wrap');
+              if (reason === 'other') {
+                textWrap.classList.add('visible');
+              } else {
+                textWrap.classList.remove('visible');
+                sendFeedback({ ...basePayload, helpful: false, reason });
+              }
             });
           });
+
+          // Submit free text feedback
+          const textSubmit = widget.querySelector('.reason-text-submit');
+          if (textSubmit) {
+            textSubmit.addEventListener('click', () => {
+              const text = widget.querySelector('.reason-text').value.trim();
+              if (text) {
+                sendFeedback({ ...basePayload, helpful: false, reason: 'other', freeText: text });
+                textSubmit.textContent = 'Sent ✓';
+                textSubmit.disabled = true;
+              }
+            });
+          }
 
           break;
         }

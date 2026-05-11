@@ -108,8 +108,15 @@ Return ONLY valid JSON:
     "ltc": "string or null",
     "holdPeriod": "string or null"
   },
-  "scope": "This report checks structural and mathematical integrity. It does not validate whether assumptions reflect current market conditions. A clean Verifi report is necessary but not sufficient for a reliable model."
-}`;
+  "scope": "This report checks structural and mathematical integrity. Where current market benchmarks were available, findings include live sourced data with citations. A clean Verifi report is necessary but not sufficient for a reliable model."
+}
+
+MARKET BENCHMARK INSTRUCTIONS:
+- If CURRENT MARKET BENCHMARKS are provided in the user message, use them in your economic findings (Layer 3)
+- When referencing market data, include the source URL and date in the finding description like: "(Source: [URL], [date])"
+- If no live data is available for a specific metric, use your training knowledge but note it as "based on historical market data"
+- Prioritise live sourced data over training knowledge for any economic benchmarking
+- Keep citations concise — one line at the end of the description is enough`;
 
 function generateReportHtml(report) {
   const now = new Date().toLocaleDateString('en-AU', {
@@ -237,6 +244,75 @@ async function handleRequest(request, env) {
     return json({ error: 'Invalid model data' }, 400);
   }
 
+  // ── Step 1: Quick pre-scan to identify model type + generate market search queries ──
+  const preScanRes = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 400,
+      messages: [{
+        role: 'user',
+        content: `Based on this Excel model structure, identify: (1) model type, (2) asset sector, (3) likely geography (country/city if detectable). Then generate 3-4 concise web search queries to find CURRENT market benchmarks relevant to this model (cap rates, construction costs, interest rates, NOI margins etc). Return ONLY valid JSON: {"modelType":"string","sector":"string","geography":"string","searchQueries":["query1","query2","query3"]}\n\nModel structure:\n${JSON.stringify({sheetNames: compactSummary.sheetNames, globalStats: compactSummary.globalStats}, null, 2)}`,
+      }],
+    }),
+  });
+
+  let marketContext = '';
+  if (preScanRes.ok) {
+    try {
+      const preScanData = await preScanRes.json();
+      const preScanText = preScanData.content[0].text;
+      const preScanJson = JSON.parse(preScanText.match(/\{[\s\S]*\}/)[0]);
+      const { searchQueries = [], geography = '', sector = '' } = preScanJson;
+
+      // ── Step 2: Run web searches in parallel for market benchmarks ──
+      const searchResults = await Promise.allSettled(
+        searchQueries.slice(0, 4).map(query =>
+          fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': env.ANTHROPIC_API_KEY,
+              'anthropic-version': '2023-06-01',
+              'anthropic-beta': 'web-search-2025-03-05',
+            },
+            body: JSON.stringify({
+              model: 'claude-sonnet-4-20250514',
+              max_tokens: 600,
+              tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+              messages: [{
+                role: 'user',
+                content: `Search for: ${query}. Return ONLY a brief factual summary (2-3 sentences max) with the key numbers and cite your source URL and date. No fluff.`,
+              }],
+            }),
+          }).then(r => r.json())
+        )
+      );
+
+      // Extract text from search results
+      const marketSnippets = searchResults
+        .filter(r => r.status === 'fulfilled')
+        .map(r => {
+          const blocks = r.value?.content || [];
+          return blocks.filter(b => b.type === 'text').map(b => b.text).join(' ');
+        })
+        .filter(Boolean);
+
+      if (marketSnippets.length > 0) {
+        marketContext = `\n\nCURRENT MARKET BENCHMARKS (sourced from live web searches — cite these sources in your findings where relevant, include URL and date):\n${marketSnippets.join('\n---\n')}`;
+      }
+    } catch (e) {
+      // Pre-scan failed — continue without market context
+      console.error('Pre-scan error:', e.message);
+    }
+  }
+
+  // ── Step 3: Main analysis with market context injected ──
   const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -250,7 +326,7 @@ async function handleRequest(request, env) {
       system: SYSTEM_PROMPT,
       messages: [{
         role: 'user',
-        content: `Please audit this real estate financial model and return the JSON report.\n\nModel structure extracted from Excel:\n${JSON.stringify(compactSummary, null, 2)}`,
+        content: `Please audit this real estate financial model and return the JSON report.\n\nModel structure extracted from Excel:\n${JSON.stringify(compactSummary, null, 2)}${marketContext}`,
       }],
     }),
   });
@@ -340,7 +416,7 @@ async function incrementKV(kv, key) {
 // Handle feedback submissions from report page
 async function handleFeedback(request, env) {
   const payload = await request.json();
-  const { type, ruleId, helpful, reason, sessionId, modelType, finding, modelProfile, reportSummary, keyMetrics, sector, verdict, fixed } = payload;
+  const { type, ruleId, helpful, reason, freeText, sessionId, modelType, finding, modelProfile, reportSummary, keyMetrics, sector, verdict, fixed } = payload;
 
   if (!env.VERIFI_STATS) return json({ ok: true });
 
