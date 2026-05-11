@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Verifi – Real Estate Financial Model Auditor</title>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -562,93 +561,6 @@
   function showError(msg) { errorBox.textContent = msg; errorBox.classList.add('visible'); }
   function setProgress(pct, label) { progressFill.style.width = pct + '%'; progressStatus.textContent = label; }
 
-  // ── Client-side Excel extraction ──────────────────────────────────────────
-  function extractModelData(uint8) {
-    const workbook = XLSX.read(uint8, { type: 'array', cellFormula: true, cellNF: false, sheetStubs: false });
-    const result = {
-      sheetNames: workbook.SheetNames,
-      totalSheets: workbook.SheetNames.length,
-      sheets: {},
-      globalStats: { totalRefErrors: 0, totalHardcodes: 0, sheetsWithErrors: [] },
-    };
-    const priorityKeywords = ['summary','output','cashflow','cash flow','cf','irr','return','input','assumption','debt','finance','financing','s&u','sources','portfolio','venture','stage','dashboard','model','promote'];
-    const sheetsToAnalyse = workbook.SheetNames.filter(name => priorityKeywords.some(k => name.toLowerCase().includes(k))).slice(0, 10);
-    const finalSheets = sheetsToAnalyse.length > 0 ? sheetsToAnalyse : workbook.SheetNames.slice(0, 8);
-
-    for (const name of finalSheets) {
-      const ws = workbook.Sheets[name];
-      if (!ws || !ws['!ref']) continue;
-      const data = { refErrors: [], hardcodes: [], keyRows: {}, formulaCount: 0, valueCount: 0 };
-      const range = XLSX.utils.decode_range(ws['!ref']);
-      const maxRow = Math.min(range.e.r, 199);
-      const maxCol = Math.min(range.e.c, 59);
-      for (let r = 0; r <= maxRow; r++) {
-        for (let c = 0; c <= maxCol; c++) {
-          const addr = XLSX.utils.encode_cell({ r, c });
-          const cell = ws[addr];
-          if (!cell) continue;
-          if (cell.f) {
-            data.formulaCount++;
-            if (cell.f.includes('#REF!')) {
-              data.refErrors.push({ ref: `${name}!${addr}`, formula: cell.f.substring(0, 80), iferrorWrapped: cell.f.includes('IFERROR') });
-            }
-          } else if (cell.v !== undefined && cell.v !== null && cell.v !== '') {
-            data.valueCount++;
-            if (typeof cell.v === 'number' && Math.abs(cell.v) > 5000) {
-              data.hardcodes.push({ ref: `${name}!${addr}`, value: Math.round(cell.v) });
-            }
-          }
-          if (r < 25 && c < 12 && cell.v !== undefined && cell.v !== null) {
-            data.keyRows[addr] = typeof cell.v === 'number' ? Math.round(cell.v * 100) / 100 : String(cell.v).substring(0, 50);
-          }
-        }
-      }
-      result.sheets[name] = {
-        refErrorCount: data.refErrors.length,
-        refErrorSamples: data.refErrors.slice(0, 6),
-        hardcodeSamples: data.hardcodes.slice(0, 8),
-        formulaCount: data.formulaCount,
-        valueCount: data.valueCount,
-        keyRows: data.keyRows,
-      };
-      result.globalStats.totalRefErrors += data.refErrors.length;
-      result.globalStats.totalHardcodes += data.hardcodes.length;
-      if (data.refErrors.length > 0) result.globalStats.sheetsWithErrors.push(name);
-    }
-    return result;
-  }
-
-  // ── Progress animation ────────────────────────────────────────────────────
-  let progressTimer = null;
-  let currentProgress = 0;
-
-  function getStatusLabel(pct) {
-    if (pct < 15) return 'Reading file…';
-    if (pct < 30) return 'Parsing model structure…';
-    if (pct < 45) return 'Running structural checks…';
-    if (pct < 60) return 'Checking accounting integrity…';
-    if (pct < 75) return 'Analysing economic assumptions…';
-    if (pct < 88) return 'Cross-checking IRR decomposition…';
-    return 'Waiting for analysis…';
-  }
-
-  function startFakeProgress(from, ceiling) {
-    currentProgress = from;
-    setProgress(currentProgress, getStatusLabel(currentProgress));
-    progressTimer = setInterval(() => {
-      if (currentProgress < ceiling) {
-        const remaining = ceiling - currentProgress;
-        const step = Math.random() * Math.min(2.5, remaining * 0.12);
-        currentProgress = Math.min(currentProgress + step, ceiling);
-        setProgress(currentProgress, getStatusLabel(currentProgress));
-      }
-    }, 400);
-  }
-
-  function stopFakeProgress() {
-    if (progressTimer) { clearInterval(progressTimer); progressTimer = null; }
-  }
-
   const WORKER_URL = 'https://verifi-analyze.rex-sen-ren.workers.dev';
 
   analyzeBtn.addEventListener('click', async () => {
@@ -658,51 +570,87 @@
     errorBox.classList.remove('visible');
 
     try {
-      startFakeProgress(0, 30);
+      setProgress(2, 'Preparing scan…');
       const arrayBuffer = await selectedFile.arrayBuffer();
       const uint8 = new Uint8Array(arrayBuffer);
-      const modelData = extractModelData(uint8);
-      stopFakeProgress();
+
+      // ── Run full model scan in Web Worker (non-blocking) ──────────────────
+      const modelData = await new Promise((resolve, reject) => {
+        const scanWorker = new Worker('/scanner.js');
+
+        scanWorker.onmessage = (e) => {
+          const { type, pct, label, result, message } = e.data;
+          if (type === 'progress') {
+            // Scanner reports 5-95%, map to 2-55% of overall progress
+            const mapped = 2 + Math.round(pct * 0.53);
+            setProgress(mapped, label);
+          } else if (type === 'done') {
+            scanWorker.terminate();
+            resolve(result);
+          } else if (type === 'error') {
+            scanWorker.terminate();
+            reject(new Error(message));
+          }
+        };
+
+        scanWorker.onerror = (e) => {
+          scanWorker.terminate();
+          reject(new Error('Scanner failed: ' + e.message));
+        };
+
+        scanWorker.postMessage({ uint8, fileName: selectedFile.name });
+      });
+
+      // ── Build compact summary to send to Cloudflare Worker ────────────────
+      setProgress(58, 'Running 100+ model checks…');
 
       const compactSummary = {
         sheetNames: modelData.sheetNames,
         totalSheets: modelData.totalSheets,
+        namedRanges: modelData.namedRanges || [],
+        sheetDependencies: modelData.sheetDependencies || {},
         globalStats: modelData.globalStats,
         sheets: {},
       };
+
       for (const [name, data] of Object.entries(modelData.sheets)) {
         compactSummary.sheets[name] = {
-          refErrorCount: data.refErrorCount,
-          refErrorSamples: data.refErrorSamples.slice(0, 4),
-          hardcodeSamples: data.hardcodeSamples.slice(0, 5),
+          dimensions: data.dimensions,
+          refErrorCount: data.refErrors.length,
+          refErrorSamples: data.refErrors.slice(0, 8),
+          hardcodeSamples: data.hardcodes.slice(0, 10),
+          checkRowFailures: data.checkRows || [],
           formulaCount: data.formulaCount,
+          valueCount: data.valueCount,
+          hiddenRows: data.hiddenRows.length,
+          hiddenCols: data.hiddenCols.length,
+          crossSheetRefs: data.crossSheetRefs || [],
           keyRows: data.keyRows,
         };
       }
 
-      startFakeProgress(32, 88);
+      // ── Send to Cloudflare Worker for Claude analysis ─────────────────────
+      setProgress(62, 'Analysing with AI…');
       const res = await fetch(WORKER_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(compactSummary),
       });
-      stopFakeProgress();
+
+      setProgress(90, 'Building report…');
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Unknown error' }));
         throw new Error(err.error || `Server error ${res.status}`);
       }
 
-      setProgress(92, 'Building report…');
       const data = await res.json();
-      // Store file name for PDF naming
       data.originalFileName = selectedFile.name.replace(/\.[^/.]+$/, '');
       setProgress(100, 'Done!');
       sessionStorage.setItem('verifi_report', JSON.stringify(data));
       setTimeout(() => { window.location.href = '/report'; }, 300);
 
     } catch (err) {
-      stopFakeProgress();
       showError(err.message || 'Something went wrong. Please try again.');
       progressWrap.classList.remove('visible');
       analyzeBtn.disabled = false;
