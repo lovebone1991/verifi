@@ -1,4 +1,3 @@
-import Anthropic from '@anthropic-ai/sdk';
 
 const CORS = {
   'Access-Control-Allow-Origin': 'https://verifi-seven.vercel.app',
@@ -238,18 +237,31 @@ async function handleRequest(request, env) {
     return json({ error: 'Invalid model data' }, 400);
   }
 
-  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
-  const message = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 4000,
-    system: SYSTEM_PROMPT,
-    messages: [{
-      role: 'user',
-      content: `Please audit this real estate financial model and return the JSON report.\n\nModel structure extracted from Excel:\n${JSON.stringify(compactSummary, null, 2)}`,
-    }],
+  const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4000,
+      system: SYSTEM_PROMPT,
+      messages: [{
+        role: 'user',
+        content: `Please audit this real estate financial model and return the JSON report.\n\nModel structure extracted from Excel:\n${JSON.stringify(compactSummary, null, 2)}`,
+      }],
+    }),
   });
 
-  const text = message.content[0].text;
+  if (!anthropicRes.ok) {
+    const errText = await anthropicRes.text();
+    throw new Error(`Anthropic API error ${anthropicRes.status}: ${errText}`);
+  }
+
+  const anthropicData = await anthropicRes.json();
+  const text = anthropicData.content[0].text;
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('No JSON in Claude response');
 
