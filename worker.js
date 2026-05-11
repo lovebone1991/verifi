@@ -244,75 +244,79 @@ async function handleRequest(request, env) {
     return json({ error: 'Invalid model data' }, 400);
   }
 
-  // ── Step 1: Quick pre-scan to identify model type + generate market search queries ──
-  const preScanRes = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 400,
-      messages: [{
-        role: 'user',
-        content: `Based on this Excel model structure, identify: (1) model type, (2) asset sector, (3) likely geography (country/city if detectable). Then generate 3-4 concise web search queries to find CURRENT market benchmarks relevant to this model (cap rates, construction costs, interest rates, NOI margins etc). Return ONLY valid JSON: {"modelType":"string","sector":"string","geography":"string","searchQueries":["query1","query2","query3"]}\n\nModel structure:\n${JSON.stringify({sheetNames: compactSummary.sheetNames, globalStats: compactSummary.globalStats}, null, 2)}`,
-      }],
-    }),
-  });
-
+  // ── Step 1: Identify model type + geography for targeted search ──────────
   let marketContext = '';
-  if (preScanRes.ok) {
-    try {
-      const preScanData = await preScanRes.json();
-      const preScanText = preScanData.content[0].text;
-      const preScanJson = JSON.parse(preScanText.match(/\{[\s\S]*\}/)[0]);
-      const { searchQueries = [], geography = '', sector = '' } = preScanJson;
+  try {
+    const identifyRes = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 300,
+        messages: [{
+          role: 'user',
+          content: `Based on this Excel model structure, return ONLY valid JSON with no other text: {"modelType":"Core Hold|Dev-Sell|Dev-Hold-Sell|BTR|PBSA|Fund","sector":"e.g. Industrial|Residential|Office|Retail|Mixed","geography":"e.g. Sydney|Melbourne|Australia|Unknown","searchQueries":["2-3 specific queries for current market benchmarks"]}
 
-      // ── Step 2: Run web searches in parallel for market benchmarks ──
-      const searchResults = await Promise.allSettled(
-        searchQueries.slice(0, 4).map(query =>
-          fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-api-key': env.ANTHROPIC_API_KEY,
-              'anthropic-version': '2023-06-01',
-              'anthropic-beta': 'web-search-2025-03-05',
-            },
-            body: JSON.stringify({
-              model: 'claude-sonnet-4-20250514',
-              max_tokens: 600,
-              tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-              messages: [{
-                role: 'user',
-                content: `Search for: ${query}. Return ONLY a brief factual summary (2-3 sentences max) with the key numbers and cite your source URL and date. No fluff.`,
-              }],
-            }),
-          }).then(r => r.json())
-        )
-      );
+Sheet names: ${JSON.stringify(compactSummary.sheetNames)}
+Global stats: ${JSON.stringify(compactSummary.globalStats)}`,
+        }],
+      }),
+    });
 
-      // Extract text from search results
-      const marketSnippets = searchResults
-        .filter(r => r.status === 'fulfilled')
-        .map(r => {
-          const blocks = r.value?.content || [];
-          return blocks.filter(b => b.type === 'text').map(b => b.text).join(' ');
-        })
-        .filter(Boolean);
+    if (identifyRes.ok) {
+      const identifyData = await identifyRes.json();
+      const identifyText = identifyData.content[0].text;
+      const identifyJson = JSON.parse(identifyText.match(/\{[\s\S]*\}/)[0]);
+      const { searchQueries = [], modelType = '', geography = '', sector = '' } = identifyJson;
 
-      if (marketSnippets.length > 0) {
-        marketContext = `\n\nCURRENT MARKET BENCHMARKS (sourced from live web searches — cite these sources in your findings where relevant, include URL and date):\n${marketSnippets.join('\n---\n')}`;
+      // ── Step 2: Tavily web search for market benchmarks ──────────────────
+      if (env.TAVILY_API_KEY && searchQueries.length > 0) {
+        const tavilyResults = await Promise.allSettled(
+          searchQueries.slice(0, 2).map(query =>
+            fetch('https://api.tavily.com/search', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                api_key: env.TAVILY_API_KEY,
+                query,
+                search_depth: 'basic',
+                max_results: 3,
+                include_answer: true,
+              }),
+            }).then(r => r.json())
+          )
+        );
+
+        const snippets = tavilyResults
+          .filter(r => r.status === 'fulfilled' && r.value?.answer)
+          .map(r => {
+            const { answer, results = [] } = r.value;
+            const sources = results.slice(0, 2).map(s => `${s.title} (${s.url})`).join(', ');
+            return `${answer}
+Sources: ${sources}`;
+          })
+          .filter(Boolean);
+
+        if (snippets.length > 0) {
+          marketContext = `
+
+CURRENT MARKET BENCHMARKS (live web search, ${new Date().toLocaleDateString('en-AU')} — cite sources in findings):
+${snippets.join('
+---
+')}`;
+        }
       }
-    } catch (e) {
-      // Pre-scan failed — continue without market context
-      console.error('Pre-scan error:', e.message);
     }
+  } catch (e) {
+    console.error('Market research error:', e.message);
+    // Continue without market context
   }
 
-  // ── Step 3: Main analysis with market context injected ──
+  // ── Main analysis ──
   const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
