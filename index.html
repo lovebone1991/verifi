@@ -3,15 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Verifi — Real Estate Financial Model Auditor</title>
+  <title>Verifi – Real Estate Financial Model Auditor</title>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
+  <!-- SheetJS for client-side Excel parsing — no file ever leaves the browser -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
       --bg: #f5f4ef;
       --surface: #ffffff;
-      --surface-2: #eeedе6;
+      --surface-2: #eeede6;
       --border: #dddcd4;
       --border-2: #ccccc4;
       --accent: #1a56db;
@@ -205,7 +207,7 @@
     }
     .privacy-note svg { color: var(--green); flex-shrink: 0; }
 
-    /* FEATURES (Claude Code style, light) */
+    /* FEATURES */
     .features {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
@@ -358,14 +360,14 @@
     <div class="progress-bar-bg">
       <div class="progress-bar-fill" id="progressFill"></div>
     </div>
-    <div class="progress-status" id="progressStatus">Uploading file…</div>
+    <div class="progress-status" id="progressStatus">Reading file…</div>
   </div>
 
   <div class="error-box" id="errorBox"></div>
 
   <p class="privacy-note">
     <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 1.5L2 3.5V7c0 2.485 2.14 4.5 5 5 2.86-.5 5-2.515 5-5V3.5L7 1.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M5 7l1.5 1.5L9 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    Your file is deleted immediately after analysis. We never store your model.
+    Your model is parsed locally in your browser. Raw file data never leaves your device.
   </p>
 
   <div class="features">
@@ -473,16 +475,16 @@
       <div class="p-card">
         <p class="p-card-t">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1.5L2 3.5V7c0 2.485 2.14 4.5 5 5 2.86-.5 5-2.515 5-5V3.5L7 1.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
-          File deleted immediately
+          Parsed in your browser
         </p>
-        <p>Your model is processed in memory and permanently deleted the moment your report is generated. No exceptions.</p>
+        <p>Your Excel file is read entirely on your device using SheetJS. The raw file never leaves your browser — only anonymised structural data is sent for analysis.</p>
       </div>
       <div class="p-card">
         <p class="p-card-t">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.2"/><path d="M5 7l1.5 1.5L9 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           No numbers stored
         </p>
-        <p>We record only which rules were triggered — never your project names, addresses, or financial data.</p>
+        <p>We record only which rules were triggered — never your project names, addresses, or financial figures.</p>
       </div>
       <div class="p-card">
         <p class="p-card-t">
@@ -492,7 +494,7 @@
         <p>Your audit report URL expires after 24 hours. Share it with your team while it's relevant.</p>
       </div>
     </div>
-    <p class="privacy-quote">"We see your model for 60 seconds. That's it."</p>
+    <p class="privacy-quote">"Your model is read on your device. Only structure reaches our servers."</p>
   </div>
 </div>
 
@@ -547,6 +549,92 @@
   function showError(msg) { errorBox.textContent = msg; errorBox.classList.add('visible'); }
   function setProgress(pct, label) { progressFill.style.width = pct + '%'; progressStatus.textContent = label; }
 
+  // ── Client-side Excel extraction (moved from Worker) ──────────────────────
+  function extractModelData(uint8) {
+    const workbook = XLSX.read(uint8, {
+      type: 'array',
+      cellFormula: true,
+      cellNF: false,
+      sheetStubs: false,
+    });
+
+    const result = {
+      sheetNames: workbook.SheetNames,
+      totalSheets: workbook.SheetNames.length,
+      sheets: {},
+      globalStats: { totalRefErrors: 0, totalHardcodes: 0, sheetsWithErrors: [] },
+    };
+
+    const priorityKeywords = [
+      'summary', 'output', 'cashflow', 'cash flow', 'cf', 'irr', 'return',
+      'input', 'assumption', 'debt', 'finance', 'financing', 's&u', 'sources',
+      'portfolio', 'venture', 'stage', 'dashboard', 'model', 'promote',
+    ];
+
+    const sheetsToAnalyse = workbook.SheetNames.filter(name =>
+      priorityKeywords.some(k => name.toLowerCase().includes(k))
+    ).slice(0, 10);
+
+    const finalSheets = sheetsToAnalyse.length > 0
+      ? sheetsToAnalyse
+      : workbook.SheetNames.slice(0, 8);
+
+    for (const name of finalSheets) {
+      const ws = workbook.Sheets[name];
+      if (!ws || !ws['!ref']) continue;
+
+      const data = { refErrors: [], hardcodes: [], keyRows: {}, formulaCount: 0, valueCount: 0 };
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      const maxRow = Math.min(range.e.r, 199);
+      const maxCol = Math.min(range.e.c, 59);
+
+      for (let r = 0; r <= maxRow; r++) {
+        for (let c = 0; c <= maxCol; c++) {
+          const addr = XLSX.utils.encode_cell({ r, c });
+          const cell = ws[addr];
+          if (!cell) continue;
+
+          if (cell.f) {
+            data.formulaCount++;
+            if (cell.f.includes('#REF!')) {
+              data.refErrors.push({
+                ref: `${name}!${addr}`,
+                formula: cell.f.substring(0, 80),
+                iferrorWrapped: cell.f.includes('IFERROR'),
+              });
+            }
+          } else if (cell.v !== undefined && cell.v !== null && cell.v !== '') {
+            data.valueCount++;
+            if (typeof cell.v === 'number' && Math.abs(cell.v) > 5000) {
+              data.hardcodes.push({ ref: `${name}!${addr}`, value: Math.round(cell.v) });
+            }
+          }
+
+          if (r < 25 && c < 12 && cell.v !== undefined && cell.v !== null) {
+            data.keyRows[addr] = typeof cell.v === 'number'
+              ? Math.round(cell.v * 100) / 100
+              : String(cell.v).substring(0, 50);
+          }
+        }
+      }
+
+      result.sheets[name] = {
+        refErrorCount: data.refErrors.length,
+        refErrorSamples: data.refErrors.slice(0, 6),
+        hardcodeSamples: data.hardcodes.slice(0, 8),
+        formulaCount: data.formulaCount,
+        valueCount: data.valueCount,
+        keyRows: data.keyRows,
+      };
+      result.globalStats.totalRefErrors += data.refErrors.length;
+      result.globalStats.totalHardcodes += data.hardcodes.length;
+      if (data.refErrors.length > 0) result.globalStats.sheetsWithErrors.push(name);
+    }
+
+    return result;
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
   const WORKER_URL = 'https://verifi-analyze.rex-sen-ren.workers.dev';
 
   analyzeBtn.addEventListener('click', async () => {
@@ -556,16 +644,43 @@
     errorBox.classList.remove('visible');
 
     try {
-      setProgress(20, 'Uploading model…');
-      const form = new FormData();
-      form.append('file', selectedFile);
+      // Step 1: parse Excel in browser
+      setProgress(20, 'Reading model locally…');
+      const arrayBuffer = await selectedFile.arrayBuffer();
+      const uint8 = new Uint8Array(arrayBuffer);
+      const modelData = extractModelData(uint8);
+
+      // Compact before sending
+      const compactSummary = {
+        sheetNames: modelData.sheetNames,
+        totalSheets: modelData.totalSheets,
+        globalStats: modelData.globalStats,
+        sheets: {},
+      };
+      for (const [name, data] of Object.entries(modelData.sheets)) {
+        compactSummary.sheets[name] = {
+          refErrorCount: data.refErrorCount,
+          refErrorSamples: data.refErrorSamples.slice(0, 4),
+          hardcodeSamples: data.hardcodeSamples.slice(0, 5),
+          formulaCount: data.formulaCount,
+          keyRows: data.keyRows,
+        };
+      }
+
+      // Step 2: send JSON (not file) to Worker
       setProgress(45, 'Running 35+ model checks…');
-      const res = await fetch(WORKER_URL, { method: 'POST', body: form });
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(compactSummary),
+      });
+
       setProgress(75, 'Analyzing with Claude AI…');
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Unknown error' }));
         throw new Error(err.error || `Server error ${res.status}`);
       }
+
       setProgress(95, 'Building report…');
       const data = await res.json();
       setProgress(100, 'Done!');

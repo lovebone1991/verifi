@@ -5,7 +5,23 @@
       "Bash(npm audit *)",
       "Bash(git init *)",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Bash(vercel --version)",
+      "Bash(node -e \"import\\('@vercel/blob'\\).then\\(m => console.log\\(Object.keys\\(m\\)\\)\\)\")",
+      "Bash(node -e \"const pkg = require\\('./node_modules/@vercel/blob/package.json'\\); console.log\\(pkg.version\\)\")",
+      "Bash(node -e \"import\\('@vercel/blob/client'\\).then\\(m => console.log\\(Object.keys\\(m\\)\\)\\)\")",
+      "Bash(Remove-Item \"F:\\\\SEN's AI PROJECTS\\\\verifi\\\\api\\\\analyze.js\" -Force)",
+      "Bash(Remove-Item \"F:\\\\SEN's AI PROJECTS\\\\verifi\\\\api\\\\blob-upload.js\" -Force)",
+      "Bash(Get-ChildItem \"F:\\\\SEN's AI PROJECTS\\\\verifi\\\\api\")",
+      "PowerShell(Get-ChildItem \"F:\\\\SEN's AI PROJECTS\\\\verifi\" -Recurse | Where-Object { !$_.PSIsContainer } | Select-Object -ExpandProperty FullName)",
+      "PowerShell(cd \"F:\\\\SEN's AI PROJECTS\\\\verifi\"; $env:CLOUDFLARE_API_TOKEN=\"cfut_c8z7QBEKaaq260o0an4nY3uvtzMlnRATOx1Ckaui7cdb636b\"; npx wrangler tail)",
+      "PowerShell(cd \"F:\\\\SEN's AI PROJECTS\\\\verifi\"; $env:CLOUDFLARE_API_TOKEN=\"cfut_c8z7QBEKaaq260o0an4nY3uvtzMlnRATOx1Ckaui7cdb636b\"; npx wrangler tail --format=pretty 2>&1 | Select-Object -First 30)",
+      "PowerShell(Invoke-WebRequest -Uri \"https://verifi-analyze.rex-sen-ren.workers.dev\" -Method GET -UseBasicParsing | Select-Object StatusCode, Content)",
+      "PowerShell(cd \"F:\\\\SEN's AI PROJECTS\\\\verifi\"; $env:CLOUDFLARE_API_TOKEN=\"cfut_c8z7QBEKaaq260o0an4nY3uvtzMlnRATOx1Ckaui7cdb636b\"; npx wrangler tail --format=pretty)",
+      "PowerShell(cd \"F:\\\\SEN's AI PROJECTS\\\\verifi\"; $env:CLOUDFLARE_API_TOKEN=\"cfut_c8z7QBEKaaq260o0an4nY3uvtzMlnRATOx1Ckaui7cdb636b\"; npx wrangler deploy)",
+      "Bash(npx wrangler *)"
     ]
   }
 }

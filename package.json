@@ -13,7 +13,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "wrangler": "^3.0.0"
+    "wrangler": "^4.90.0"
   },
   "engines": {
     "node": ">=18"

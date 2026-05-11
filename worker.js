@@ -1,4 +1,3 @@
-import * as XLSX from 'xlsx';
 import Anthropic from '@anthropic-ai/sdk';
 
 const CORS = {
@@ -112,90 +111,6 @@ Return ONLY valid JSON:
   },
   "scope": "This report checks structural and mathematical integrity. It does not validate whether assumptions reflect current market conditions. A clean Verifi report is necessary but not sufficient for a reliable model."
 }`;
-
-function extractModelData(uint8) {
-  const workbook = XLSX.read(uint8, {
-    type: 'array',
-    cellFormula: true,
-    cellNF: false,
-    sheetStubs: false,
-  });
-
-  const result = {
-    sheetNames: workbook.SheetNames,
-    totalSheets: workbook.SheetNames.length,
-    sheets: {},
-    globalStats: { totalRefErrors: 0, totalHardcodes: 0, sheetsWithErrors: [] },
-  };
-
-  const priorityKeywords = [
-    'summary', 'output', 'cashflow', 'cash flow', 'cf', 'irr', 'return',
-    'input', 'assumption', 'debt', 'finance', 'financing', 's&u', 'sources',
-    'portfolio', 'venture', 'stage', 'dashboard', 'model', 'promote',
-  ];
-
-  const sheetsToAnalyse = workbook.SheetNames.filter(name =>
-    priorityKeywords.some(k => name.toLowerCase().includes(k))
-  ).slice(0, 10);
-
-  const finalSheets = sheetsToAnalyse.length > 0
-    ? sheetsToAnalyse
-    : workbook.SheetNames.slice(0, 8);
-
-  for (const name of finalSheets) {
-    const ws = workbook.Sheets[name];
-    if (!ws || !ws['!ref']) continue;
-
-    const data = { refErrors: [], hardcodes: [], keyRows: {}, formulaCount: 0, valueCount: 0 };
-    const range = XLSX.utils.decode_range(ws['!ref']);
-    const maxRow = Math.min(range.e.r, 199);
-    const maxCol = Math.min(range.e.c, 59);
-
-    for (let r = 0; r <= maxRow; r++) {
-      for (let c = 0; c <= maxCol; c++) {
-        const addr = XLSX.utils.encode_cell({ r, c });
-        const cell = ws[addr];
-        if (!cell) continue;
-
-        if (cell.f) {
-          data.formulaCount++;
-          if (cell.f.includes('#REF!')) {
-            data.refErrors.push({
-              ref: `${name}!${addr}`,
-              formula: cell.f.substring(0, 80),
-              iferrorWrapped: cell.f.includes('IFERROR'),
-            });
-          }
-        } else if (cell.v !== undefined && cell.v !== null && cell.v !== '') {
-          data.valueCount++;
-          if (typeof cell.v === 'number' && Math.abs(cell.v) > 5000) {
-            data.hardcodes.push({ ref: `${name}!${addr}`, value: Math.round(cell.v) });
-          }
-        }
-
-        if (r < 25 && c < 12 && cell.v !== undefined && cell.v !== null) {
-          data.keyRows[addr] = typeof cell.v === 'number'
-            ? Math.round(cell.v * 100) / 100
-            : String(cell.v).substring(0, 50);
-        }
-      }
-    }
-
-    result.sheets[name] = {
-      refErrorCount: data.refErrors.length,
-      refErrorSamples: data.refErrors.slice(0, 6),
-      hardcodeSamples: data.hardcodes.slice(0, 8),
-      formulaCount: data.formulaCount,
-      valueCount: data.valueCount,
-      keyRows: data.keyRows,
-    };
-    result.globalStats.totalRefErrors += data.refErrors.length;
-    result.globalStats.totalHardcodes += data.hardcodes.length;
-    if (data.refErrors.length > 0) result.globalStats.sheetsWithErrors.push(name);
-  }
-
-  return result;
-}
 
 function generateReportHtml(report) {
   const now = new Date().toLocaleDateString('en-AU', {
@@ -316,29 +231,11 @@ async function handleRequest(request, env) {
     return json({ error: 'Method not allowed' }, 405);
   }
 
-  const formData = await request.formData();
-  const file = formData.get('file');
-  if (!file || typeof file === 'string') {
-    return json({ error: 'No file uploaded' }, 400);
-  }
+  // Now receives pre-parsed JSON from frontend, not raw Excel file
+  const compactSummary = await request.json();
 
-  const uint8 = new Uint8Array(await file.arrayBuffer());
-  const modelData = extractModelData(uint8);
-
-  const compactSummary = {
-    sheetNames: modelData.sheetNames,
-    totalSheets: modelData.totalSheets,
-    globalStats: modelData.globalStats,
-    sheets: {},
-  };
-  for (const [name, data] of Object.entries(modelData.sheets)) {
-    compactSummary.sheets[name] = {
-      refErrorCount: data.refErrorCount,
-      refErrorSamples: data.refErrorSamples.slice(0, 4),
-      hardcodeSamples: data.hardcodeSamples.slice(0, 5),
-      formulaCount: data.formulaCount,
-      keyRows: data.keyRows,
-    };
+  if (!compactSummary || !compactSummary.sheetNames) {
+    return json({ error: 'Invalid model data' }, 400);
   }
 
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
@@ -368,7 +265,6 @@ export default {
 
     try {
       const response = await handleRequest(request, env);
-      // Ensure CORS headers are on every response
       const headers = new Headers(response.headers);
       for (const [k, v] of Object.entries(CORS)) headers.set(k, v);
       return new Response(response.body, { status: response.status, headers });
