@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Verifi – Real Estate Financial Model Auditor</title>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
-  <!-- SheetJS for client-side Excel parsing — no file ever leaves the browser -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -16,8 +15,8 @@
       --surface-2: #eeede6;
       --border: #dddcd4;
       --border-2: #ccccc4;
-      --accent: #1a56db;
-      --accent-dim: #e8f0fe;
+      --accent: #0e0e0c;
+      --accent-dim: #f0efea;
       --text: #0e0e0c;
       --muted: #6a6960;
       --faint: #9a9990;
@@ -97,16 +96,28 @@
       margin-bottom: 16px;
       color: var(--text);
     }
-    h1 em { font-style: normal; color: var(--accent); }
+    h1 em {
+      font-style: italic;
+      font-weight: 400;
+      color: var(--text);
+    }
 
     .subtitle {
       text-align: center;
       color: var(--muted);
       font-size: 16px;
       line-height: 1.65;
-      margin-bottom: 44px;
+      margin-bottom: 20px;
       max-width: 520px;
       font-weight: 300;
+    }
+
+    .cta-line {
+      text-align: center;
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: 36px;
     }
 
     /* UPLOAD */
@@ -122,7 +133,7 @@
       position: relative;
     }
     .upload-zone:hover, .upload-zone.drag-over {
-      border-color: var(--accent);
+      border-color: var(--text);
       background: var(--accent-dim);
     }
     .upload-zone input[type="file"] {
@@ -137,7 +148,7 @@
       align-items: center;
       gap: 12px;
       background: var(--accent-dim);
-      border: 1px solid #c0d4f8;
+      border: 1px solid var(--border-2);
       border-radius: 10px;
       padding: 12px 16px;
       margin-top: 16px;
@@ -169,7 +180,7 @@
       justify-content: center;
       margin-top: 20px;
     }
-    .btn-primary:hover:not(:disabled) { opacity: 0.88; }
+    .btn-primary:hover:not(:disabled) { opacity: 0.78; }
 
     .progress-wrap {
       display: none;
@@ -303,6 +314,7 @@
     .badge { animation: up 0.4s ease both; }
     h1 { animation: up 0.4s 0.07s ease both; }
     .subtitle { animation: up 0.4s 0.14s ease both; }
+    .cta-line { animation: up 0.4s 0.18s ease both; }
     .upload-zone { animation: up 0.4s 0.21s ease both; }
 
     @media (max-width: 760px) {
@@ -338,8 +350,10 @@
   <h1>Audit your <em>financial model</em><br>in seconds</h1>
 
   <p class="subtitle">
-    Upload any real estate financial model. Verifi runs 35+ structural, accounting and economic checks and delivers a precise audit report — powered by Claude AI.
+    Upload any real estate financial model. Verifi runs 100+ structural, accounting and economic checks and delivers a precise audit report.
   </p>
+
+  <p class="cta-line">Upload your model. Get your report in 60 seconds.</p>
 
   <div class="upload-zone" id="dropZone">
     <input type="file" id="fileInput" accept=".xlsx,.xls,.xlsm" />
@@ -354,7 +368,7 @@
     <span id="fileSize" style="color:var(--faint);font-size:12px;white-space:nowrap;"></span>
   </div>
 
-  <button class="btn btn-primary" id="analyzeBtn" disabled>✦ Analyze Model</button>
+  <button class="btn btn-primary" id="analyzeBtn" disabled>✦ Analyse Model</button>
 
   <div class="progress-wrap" id="progressWrap">
     <div class="progress-bar-bg">
@@ -374,12 +388,12 @@
     <div class="feature">
       <div class="feature-icon">🔍</div>
       <div class="feature-title">Assumption Review</div>
-      <div class="feature-desc">Flags cap rates, rent growth, vacancy, expense ratios, and debt assumptions against market norms.</div>
+      <div class="feature-desc">Flags revenue, cost and expenses, and debt assumptions against market norms.</div>
     </div>
     <div class="feature">
       <div class="feature-icon">⚠️</div>
       <div class="feature-title">Error Detection</div>
-      <div class="feature-desc">Identifies formula breaks, circular references, hardcoded overrides, and balance sheet mismatches.</div>
+      <div class="feature-desc">Identifies formula breaks, circular references, hardcoded overrides, hidden errors and cashflow misalignments.</div>
     </div>
     <div class="feature">
       <div class="feature-icon">📋</div>
@@ -390,38 +404,10 @@
 </main>
 
 <div class="stats-bar">
-  <div class="stat"><span class="stat-n">35+</span><p class="stat-l">checks per model</p></div>
+  <div class="stat"><span class="stat-n">100+</span><p class="stat-l">checks per model</p></div>
   <div class="stat"><span class="stat-n">&lt;60s</span><p class="stat-l">to full report</p></div>
   <div class="stat"><span class="stat-n">3</span><p class="stat-l">verification layers</p></div>
-  <div class="stat"><span class="stat-n">$0</span><p class="stat-l">free during beta</p></div>
-</div>
-
-<div class="full-section">
-  <div class="full-section-inner">
-    <p class="section-label">How it works</p>
-    <div class="steps">
-      <div class="step">
-        <p class="step-n">01</p>
-        <p class="step-t">Upload your model</p>
-        <p class="step-d">Drop any .xlsx financial model. Any sector, any structure.</p>
-      </div>
-      <div class="step">
-        <p class="step-n">02</p>
-        <p class="step-t">35+ checks run</p>
-        <p class="step-d">Structural integrity, accounting identities, economic plausibility — all three layers.</p>
-      </div>
-      <div class="step">
-        <p class="step-n">03</p>
-        <p class="step-t">Precise audit report</p>
-        <p class="step-d">Every failed check shows the exact cell, what went wrong, and how to fix it.</p>
-      </div>
-      <div class="step">
-        <p class="step-n">04</p>
-        <p class="step-t">Impact on your IRR</p>
-        <p class="step-d">Each error is rated by impact on your return — fix what matters first.</p>
-      </div>
-    </div>
-  </div>
+  <div class="stat"><span class="stat-n">FREE</span><p class="stat-l">during beta</p></div>
 </div>
 
 <div class="full-section checks-bg">
@@ -435,33 +421,32 @@
           <li>Formula errors (#REF, #DIV/0, #NAME)</li>
           <li>Hardcoded values in calculation cells</li>
           <li>Circular references</li>
-          <li>Inputs sheet separation</li>
-          <li>Centralised toggle controls</li>
-          <li>Orphaned input cells</li>
+          <li>Inputs not separated from calculations</li>
+          <li>Toggle switches not centralised</li>
+          <li>Dead input cells that drive nothing</li>
         </ul>
       </div>
       <div class="layer">
         <span class="ltag l2">Layer 2 · Accounting</span>
-        <p class="layer-t">Does the maths close?</p>
+        <p class="layer-t">Does every number reconcile?</p>
         <ul>
-          <li>Cash flow identity (period by period)</li>
-          <li>Debt drawdown = repayment</li>
-          <li>Sources = Uses</li>
-          <li>Interest fully repaid</li>
-          <li>Levered CF = Unlevered + debt schedule</li>
-          <li>Actual → forecast transition</li>
+          <li>Cash flows balance every period</li>
+          <li>Debt drawn matches total repayments</li>
+          <li>Sources equal uses</li>
+          <li>Interest expense fully accounted for</li>
+          <li>Leverage impact correctly reflected</li>
+          <li>No ghost cash appearing or evaporating throughout the model</li>
         </ul>
       </div>
       <div class="layer">
         <span class="ltag l3">Layer 3 · Economic</span>
-        <p class="layer-t">Do the numbers make sense?</p>
+        <p class="layer-t">The check that goes beyond the numbers</p>
         <ul>
-          <li>Yield on cost vs completion cap rate</li>
-          <li>Leverage uplift vs LTV / LTC</li>
-          <li>Return waterfall reconciliation</li>
-          <li>Income return vs ingoing yield</li>
-          <li>Capital growth vs rental growth</li>
-          <li>Development margin benchmarks</li>
+          <li>Leverage effect consistent with gearing and cost of debt</li>
+          <li>Yield on cost spread aligns with development value creation</li>
+          <li>Operating margin within sector benchmarks</li>
+          <li>Key inputs and outputs benchmarked against current market precedent</li>
+          <li style="color:var(--faint);font-style:italic">Among 30+ economic integrity checks</li>
         </ul>
       </div>
     </div>
@@ -470,6 +455,34 @@
 
 <div class="full-section">
   <div class="full-section-inner">
+    <p class="section-label">How it works</p>
+    <div class="steps">
+      <div class="step">
+        <p class="step-n">01</p>
+        <p class="step-t">Upload your model</p>
+        <p class="step-d">Drop any .xlsx financial model. Any sector, any structure.</p>
+      </div>
+      <div class="step">
+        <p class="step-n">02</p>
+        <p class="step-t">100+ checks run</p>
+        <p class="step-d">Structural integrity, accounting identities, economic plausibility — all three layers.</p>
+      </div>
+      <div class="step">
+        <p class="step-n">03</p>
+        <p class="step-t">Precise audit report</p>
+        <p class="step-d">Every failed check shows the exact cell, what went wrong, and how to fix it.</p>
+      </div>
+      <div class="step">
+        <p class="step-n">04</p>
+        <p class="step-t">Impact on your returns</p>
+        <p class="step-d">Each error is rated by return impacts — fix what matters first.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="full-section" style="background:var(--surface);border-top:1px solid var(--border);">
+  <div class="full-section-inner">
     <p class="section-label">Privacy & data</p>
     <div class="privacy-grid">
       <div class="p-card">
@@ -477,21 +490,21 @@
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1.5L2 3.5V7c0 2.485 2.14 4.5 5 5 2.86-.5 5-2.515 5-5V3.5L7 1.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
           Parsed in your browser
         </p>
-        <p>Your Excel file is read entirely on your device using SheetJS. The raw file never leaves your browser — only anonymised structural data is sent for analysis.</p>
+        <p>Your Excel file is read entirely on your device. The raw file never touches our servers.</p>
       </div>
       <div class="p-card">
         <p class="p-card-t">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.2"/><path d="M5 7l1.5 1.5L9 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          No numbers stored
+          Your numbers stay yours
         </p>
-        <p>We record only which rules were triggered — never your project names, addresses, or financial figures.</p>
+        <p>Project names, addresses, and financial figures never leave your device. We see structure — not substance.</p>
       </div>
       <div class="p-card">
         <p class="p-card-t">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2" y="5" width="10" height="7" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M4.5 5V4a2.5 2.5 0 015 0v1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-          Report expires in 24h
+          Report lives in your session
         </p>
-        <p>Your audit report URL expires after 24 hours. Share it with your team while it's relevant.</p>
+        <p>Your audit report exists only in your current browser session. Close the tab and it's gone — export to PDF to keep a copy.</p>
       </div>
     </div>
     <p class="privacy-quote">"Your model is read on your device. Only structure reaches our servers."</p>
@@ -499,7 +512,7 @@
 </div>
 
 <footer>
-  <span>Verifi © 2026 — Built with Claude AI & Vercel</span>
+  <span>Verifi © 2026</span>
   <div class="footer-links">
     <a href="mailto:hello@verifi.com.au">hello@verifi.com.au</a>
     <a href="#">Privacy</a>
@@ -549,59 +562,35 @@
   function showError(msg) { errorBox.textContent = msg; errorBox.classList.add('visible'); }
   function setProgress(pct, label) { progressFill.style.width = pct + '%'; progressStatus.textContent = label; }
 
-  // ── Client-side Excel extraction (moved from Worker) ──────────────────────
+  // ── Client-side Excel extraction ──────────────────────────────────────────
   function extractModelData(uint8) {
-    const workbook = XLSX.read(uint8, {
-      type: 'array',
-      cellFormula: true,
-      cellNF: false,
-      sheetStubs: false,
-    });
-
+    const workbook = XLSX.read(uint8, { type: 'array', cellFormula: true, cellNF: false, sheetStubs: false });
     const result = {
       sheetNames: workbook.SheetNames,
       totalSheets: workbook.SheetNames.length,
       sheets: {},
       globalStats: { totalRefErrors: 0, totalHardcodes: 0, sheetsWithErrors: [] },
     };
-
-    const priorityKeywords = [
-      'summary', 'output', 'cashflow', 'cash flow', 'cf', 'irr', 'return',
-      'input', 'assumption', 'debt', 'finance', 'financing', 's&u', 'sources',
-      'portfolio', 'venture', 'stage', 'dashboard', 'model', 'promote',
-    ];
-
-    const sheetsToAnalyse = workbook.SheetNames.filter(name =>
-      priorityKeywords.some(k => name.toLowerCase().includes(k))
-    ).slice(0, 10);
-
-    const finalSheets = sheetsToAnalyse.length > 0
-      ? sheetsToAnalyse
-      : workbook.SheetNames.slice(0, 8);
+    const priorityKeywords = ['summary','output','cashflow','cash flow','cf','irr','return','input','assumption','debt','finance','financing','s&u','sources','portfolio','venture','stage','dashboard','model','promote'];
+    const sheetsToAnalyse = workbook.SheetNames.filter(name => priorityKeywords.some(k => name.toLowerCase().includes(k))).slice(0, 10);
+    const finalSheets = sheetsToAnalyse.length > 0 ? sheetsToAnalyse : workbook.SheetNames.slice(0, 8);
 
     for (const name of finalSheets) {
       const ws = workbook.Sheets[name];
       if (!ws || !ws['!ref']) continue;
-
       const data = { refErrors: [], hardcodes: [], keyRows: {}, formulaCount: 0, valueCount: 0 };
       const range = XLSX.utils.decode_range(ws['!ref']);
       const maxRow = Math.min(range.e.r, 199);
       const maxCol = Math.min(range.e.c, 59);
-
       for (let r = 0; r <= maxRow; r++) {
         for (let c = 0; c <= maxCol; c++) {
           const addr = XLSX.utils.encode_cell({ r, c });
           const cell = ws[addr];
           if (!cell) continue;
-
           if (cell.f) {
             data.formulaCount++;
             if (cell.f.includes('#REF!')) {
-              data.refErrors.push({
-                ref: `${name}!${addr}`,
-                formula: cell.f.substring(0, 80),
-                iferrorWrapped: cell.f.includes('IFERROR'),
-              });
+              data.refErrors.push({ ref: `${name}!${addr}`, formula: cell.f.substring(0, 80), iferrorWrapped: cell.f.includes('IFERROR') });
             }
           } else if (cell.v !== undefined && cell.v !== null && cell.v !== '') {
             data.valueCount++;
@@ -609,15 +598,11 @@
               data.hardcodes.push({ ref: `${name}!${addr}`, value: Math.round(cell.v) });
             }
           }
-
           if (r < 25 && c < 12 && cell.v !== undefined && cell.v !== null) {
-            data.keyRows[addr] = typeof cell.v === 'number'
-              ? Math.round(cell.v * 100) / 100
-              : String(cell.v).substring(0, 50);
+            data.keyRows[addr] = typeof cell.v === 'number' ? Math.round(cell.v * 100) / 100 : String(cell.v).substring(0, 50);
           }
         }
       }
-
       result.sheets[name] = {
         refErrorCount: data.refErrors.length,
         refErrorSamples: data.refErrors.slice(0, 6),
@@ -630,14 +615,10 @@
       result.globalStats.totalHardcodes += data.hardcodes.length;
       if (data.refErrors.length > 0) result.globalStats.sheetsWithErrors.push(name);
     }
-
     return result;
   }
-  // ─────────────────────────────────────────────────────────────────────────
 
-  const WORKER_URL = 'https://verifi-analyze.rex-sen-ren.workers.dev';
-
-  // Smooth animated progress — crawls realistically, stops at 88% to wait for result
+  // ── Progress animation ────────────────────────────────────────────────────
   let progressTimer = null;
   let currentProgress = 0;
 
@@ -646,9 +627,9 @@
     if (pct < 30) return 'Parsing model structure…';
     if (pct < 45) return 'Running structural checks…';
     if (pct < 60) return 'Checking accounting integrity…';
-    if (pct < 75) return 'Analyzing economic assumptions…';
+    if (pct < 75) return 'Analysing economic assumptions…';
     if (pct < 88) return 'Cross-checking IRR decomposition…';
-    return 'Waiting for Claude AI…';
+    return 'Waiting for analysis…';
   }
 
   function startFakeProgress(from, ceiling) {
@@ -668,6 +649,8 @@
     if (progressTimer) { clearInterval(progressTimer); progressTimer = null; }
   }
 
+  const WORKER_URL = 'https://verifi-analyze.rex-sen-ren.workers.dev';
+
   analyzeBtn.addEventListener('click', async () => {
     if (!selectedFile) return;
     analyzeBtn.disabled = true;
@@ -675,14 +658,12 @@
     errorBox.classList.remove('visible');
 
     try {
-      // Step 1: parse Excel in browser (fast, ~1-2s)
       startFakeProgress(0, 30);
       const arrayBuffer = await selectedFile.arrayBuffer();
       const uint8 = new Uint8Array(arrayBuffer);
       const modelData = extractModelData(uint8);
       stopFakeProgress();
 
-      // Compact before sending
       const compactSummary = {
         sheetNames: modelData.sheetNames,
         totalSheets: modelData.totalSheets,
@@ -699,7 +680,6 @@
         };
       }
 
-      // Step 2: send to Worker + Claude API (slow, ~15-30s) — crawl to 88% while waiting
       startFakeProgress(32, 88);
       const res = await fetch(WORKER_URL, {
         method: 'POST',
@@ -713,9 +693,10 @@
         throw new Error(err.error || `Server error ${res.status}`);
       }
 
-      // Step 3: parse response + redirect
       setProgress(92, 'Building report…');
       const data = await res.json();
+      // Store file name for PDF naming
+      data.originalFileName = selectedFile.name.replace(/\.[^/.]+$/, '');
       setProgress(100, 'Done!');
       sessionStorage.setItem('verifi_report', JSON.stringify(data));
       setTimeout(() => { window.location.href = '/report'; }, 300);

@@ -266,7 +266,145 @@ async function handleRequest(request, env) {
   if (!jsonMatch) throw new Error('No JSON in Claude response');
 
   const report = JSON.parse(jsonMatch[0]);
-  return json({ reportHtml: generateReportHtml(report) });
+
+  // ── Layer 1: Store rule frequency stats in KV (fire-and-forget) ──
+  if (env.VERIFI_STATS) {
+    const statsPromises = [];
+
+    // Count total analyses
+    statsPromises.push(incrementKV(env.VERIFI_STATS, 'stats:total_analyses'));
+
+    // Count by model type
+    if (report.modelType) {
+      const typeKey = 'stats:modelType:' + report.modelType.replace(/[^a-zA-Z0-9]/g, '_');
+      statsPromises.push(incrementKV(env.VERIFI_STATS, typeKey));
+    }
+
+    // Count each rule triggered (FAIL or WARN only)
+    if (report.findings) {
+      for (const finding of report.findings) {
+        if (finding.status !== 'PASS') {
+          statsPromises.push(incrementKV(env.VERIFI_STATS, 'stats:rule:' + finding.id));
+          statsPromises.push(incrementKV(env.VERIFI_STATS, 'stats:rule:' + finding.id + ':' + finding.status));
+        }
+      }
+    }
+
+    // Count verdicts
+    if (report.verdict) {
+      statsPromises.push(incrementKV(env.VERIFI_STATS, 'stats:verdict:' + report.verdict));
+    }
+
+    // Don't await — let it run in background, don't slow down response
+    Promise.all(statsPromises).catch(() => {});
+  }
+
+  // Build rich report metadata to send to frontend (for feedback enrichment)
+  const reportMeta = {
+    reportId: crypto.randomUUID(),
+    modelType: report.modelType || null,
+    sector: report.sector || null,
+    verdict: report.verdict || null,
+    summary: report.summary || {},
+    keyMetrics: report.keyMetrics || {},
+    findings: (report.findings || []).map(f => ({
+      id: f.id,
+      status: f.status,
+      impact: f.impact,
+      description: f.description || '',
+      irrImpact: f.irrImpact || null,
+      fix: f.fix || '',
+    })),
+    modelProfile: {
+      totalSheets: compactSummary.totalSheets,
+      sheetNames: compactSummary.sheetNames,
+      totalRefErrors: compactSummary.globalStats?.totalRefErrors || 0,
+      totalHardcodes: compactSummary.globalStats?.totalHardcodes || 0,
+      sheetsWithErrors: compactSummary.globalStats?.sheetsWithErrors || [],
+      formulaCounts: Object.fromEntries(
+        Object.entries(compactSummary.sheets || {}).map(([k, v]) => [k, v.formulaCount || 0])
+      ),
+    },
+  };
+
+  return json({ reportHtml: generateReportHtml(report), ...reportMeta });
+}
+
+// Increment a KV counter atomically
+async function incrementKV(kv, key) {
+  const current = await kv.get(key);
+  const val = current ? parseInt(current) + 1 : 1;
+  await kv.put(key, String(val));
+}
+
+// Handle feedback submissions from report page
+async function handleFeedback(request, env) {
+  const payload = await request.json();
+  const { type, ruleId, helpful, reason, sessionId, modelType, finding, modelProfile, reportSummary, keyMetrics, sector, verdict, fixed } = payload;
+
+  if (!env.VERIFI_STATS) return json({ ok: true });
+
+  const timestamp = new Date().toISOString();
+
+  // ── Fix confirmation (separate event type) ──
+  if (type === 'fix_confirmation') {
+    const recordKey = 'fix:' + timestamp + ':' + (sessionId || 'anon');
+    await Promise.all([
+      incrementKV(env.VERIFI_STATS, 'fix:total'),
+      incrementKV(env.VERIFI_STATS, fixed ? 'fix:yes' : 'fix:no'),
+      env.VERIFI_STATS.put(recordKey, JSON.stringify({
+        timestamp, type: 'fix_confirmation', fixed,
+        sessionId: sessionId || null,
+        modelType: modelType || null,
+        sector: sector || null,
+        verdict: verdict || null,
+        reportSummary: reportSummary || null,
+        keyMetrics: keyMetrics || null,
+      }), { expirationTtl: 60 * 60 * 24 * 365 }),
+    ]);
+    return json({ ok: true });
+  }
+
+  // ── Finding feedback ──
+  if (!ruleId || typeof helpful !== 'boolean') {
+    return json({ error: 'Invalid feedback' }, 400);
+  }
+
+  const suffix = helpful ? 'helpful' : 'not_helpful';
+
+  // 1. Aggregate counters
+  const counters = [
+    incrementKV(env.VERIFI_STATS, 'feedback:' + ruleId + ':' + suffix),
+    incrementKV(env.VERIFI_STATS, 'feedback:total'),
+  ];
+  if (modelType) {
+    counters.push(incrementKV(env.VERIFI_STATS, 'feedback:' + ruleId + ':' + modelType.replace(/[^a-zA-Z0-9]/g, '_') + ':' + suffix));
+  }
+  if (!helpful && reason) {
+    counters.push(incrementKV(env.VERIFI_STATS, 'feedback:' + ruleId + ':reason:' + reason));
+  }
+  await Promise.all(counters);
+
+  // 2. Rich record for pattern analysis
+  const recordKey = 'record:' + timestamp + ':' + ruleId + ':' + (sessionId || 'anon');
+  const record = {
+    timestamp,
+    type: 'finding_feedback',
+    sessionId: sessionId || null,
+    ruleId,
+    helpful,
+    reason: reason || null,          // false_positive | wrong_severity | unclear | other
+    modelType: modelType || null,
+    sector: sector || null,
+    verdict: verdict || null,
+    finding: finding || null,
+    modelProfile: modelProfile || null,
+    reportSummary: reportSummary || null,
+    keyMetrics: keyMetrics || null,
+  };
+  await env.VERIFI_STATS.put(recordKey, JSON.stringify(record), { expirationTtl: 60 * 60 * 24 * 365 });
+
+  return json({ ok: true });
 }
 
 export default {
@@ -276,7 +414,13 @@ export default {
     }
 
     try {
-      const response = await handleRequest(request, env);
+      const url = new URL(request.url);
+      let response;
+      if (url.pathname === '/feedback' && request.method === 'POST') {
+        response = await handleFeedback(request, env);
+      } else {
+        response = await handleRequest(request, env);
+      }
       const headers = new Headers(response.headers);
       for (const [k, v] of Object.entries(CORS)) headers.set(k, v);
       return new Response(response.body, { status: response.status, headers });

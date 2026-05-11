@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Verifi — Audit Report</title>
+  <title>Verifi – Audit Report</title>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
     :root {
       --bg: #f5f4ef;
       --surface: #ffffff;
@@ -16,10 +16,12 @@
       --muted: #6a6960;
       --faint: #9a9990;
       --accent: #1a56db;
+      --green: #1a6b3c;
+      --green-bg: #edf5f0;
+      --red: #b83224;
       --sans: 'DM Sans', system-ui, sans-serif;
       --mono: 'DM Mono', monospace;
     }
-
     body {
       font-family: var(--sans);
       background: var(--bg);
@@ -27,7 +29,6 @@
       min-height: 100vh;
       -webkit-font-smoothing: antialiased;
     }
-
     header {
       width: 100%;
       padding: 20px 48px;
@@ -40,7 +41,6 @@
       top: 0;
       z-index: 100;
     }
-
     .logo {
       font-family: var(--mono);
       font-size: 15px;
@@ -50,14 +50,12 @@
       text-decoration: none;
     }
     .logo span { color: #b83224; }
-
     .header-right {
       margin-left: auto;
       display: flex;
       gap: 10px;
       align-items: center;
     }
-
     .btn {
       display: inline-flex;
       align-items: center;
@@ -81,13 +79,11 @@
       border-color: var(--text);
     }
     .btn-primary:hover { opacity: 0.85; }
-
     .container {
       max-width: 720px;
       margin: 0 auto;
       padding: 48px 24px 80px;
     }
-
     .empty-state {
       text-align: center;
       padding: 80px 20px;
@@ -95,27 +91,123 @@
     }
     .empty-state a { color: var(--accent); text-decoration: none; }
 
+    /* Feedback widget styles */
+    .feedback-widget {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #eeedea;
+    }
+    .feedback-label {
+      font-size: 11px;
+      color: var(--faint);
+      flex: 1;
+    }
+    .feedback-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--muted);
+      font-family: var(--sans);
+      transition: all 0.15s;
+    }
+    .feedback-btn:hover { border-color: #aaa; color: var(--text); }
+    .feedback-btn.voted-yes { background: var(--green-bg); border-color: #a8d5b8; color: var(--green); }
+    .feedback-btn.voted-no { background: #fdf0ee; border-color: #f5c4bc; color: var(--red); }
+    .feedback-btn:disabled { cursor: default; opacity: 0.7; }
+    .feedback-thanks {
+      font-size: 11px;
+      color: var(--green);
+      display: none;
+    }
+    .feedback-thanks.visible { display: block; }
+
+    /* Reason selector (appears after thumbs down) */
+    .feedback-reason {
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid #eeedea;
+      width: 100%;
+    }
+    .feedback-reason.visible { display: flex; }
+    .feedback-reason-label { font-size: 11px; color: var(--faint); margin-bottom: 2px; }
+    .reason-options { display: flex; flex-wrap: wrap; gap: 6px; }
+    .reason-btn {
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--muted);
+      cursor: pointer;
+      font-family: var(--sans);
+      transition: all 0.15s;
+    }
+    .reason-btn:hover { border-color: #aaa; color: var(--text); }
+    .reason-btn.selected { background: #fdf0ee; border-color: #f5c4bc; color: var(--red); }
+
+    /* Fix confirmation bar at bottom of report */
+    .fix-bar {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-top: 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .fix-bar-label { font-size: 13px; color: var(--muted); flex: 1; min-width: 200px; }
+    .fix-options { display: flex; gap: 8px; }
+    .fix-btn {
+      font-size: 12px;
+      padding: 6px 14px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--muted);
+      cursor: pointer;
+      font-family: var(--sans);
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .fix-btn:hover { border-color: #aaa; color: var(--text); }
+    .fix-btn.selected-yes { background: var(--green-bg); border-color: #a8d5b8; color: var(--green); }
+    .fix-btn.selected-no { background: #f5f4ef; border-color: #ccc; color: var(--muted); }
+    .fix-thanks { font-size: 11px; color: var(--green); display: none; }
+    .fix-thanks.visible { display: block; }
+
     @media (max-width: 600px) {
       header { padding: 16px 20px; }
       .container { padding: 32px 16px 60px; }
     }
-
     @media print {
       header { display: none; }
+      .feedback-widget { display: none; }
       body { background: #fff; }
     }
   </style>
 </head>
 <body>
-
 <header>
   <a class="logo" href="/">Verifi<span>.</span></a>
   <div class="header-right">
     <a href="/" class="btn">← New Audit</a>
-    <button class="btn btn-primary" onclick="window.print()">Export PDF</button>
+    <button class="btn btn-primary" id="exportBtn" onclick="exportPDF()">Export PDF</button>
   </div>
 </header>
-
 <div class="container">
   <div class="empty-state" id="emptyState">
     <p style="font-size:40px;margin-bottom:16px">📊</p>
@@ -124,8 +216,195 @@
   </div>
   <div id="reportContent"></div>
 </div>
-
 <script>
+  const WORKER_URL = 'https://verifi-analyze.rex-sen-ren.workers.dev';
+
+  // ── Inject feedback widgets after report renders ──────────────────────────
+  // ── Session ID (anonymous, persists across visits) ──────────────────────
+  function getSessionId() {
+    let id = localStorage.getItem('verifi_session_id');
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem('verifi_session_id', id);
+    }
+    return id;
+  }
+  const SESSION_ID = getSessionId();
+
+  // ── Send feedback to Worker ───────────────────────────────────────────────
+  function sendFeedback(payload) {
+    fetch(WORKER_URL + '/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...payload, sessionId: SESSION_ID }),
+    }).catch(() => {});
+  }
+
+  // ── Inject feedback widgets into each finding card ────────────────────────
+  function injectFeedbackWidgets(findings, context) {
+    if (!findings || findings.length === 0) return;
+
+    const allDivs = document.querySelectorAll('#reportContent div');
+
+    findings.forEach(finding => {
+      const ruleId = finding.id;
+
+      for (const div of allDivs) {
+        if (div.textContent.includes(ruleId + ' ·') && div.style.borderRadius === '12px') {
+          if (div.querySelector('.feedback-widget')) continue;
+
+          const widget = document.createElement('div');
+          widget.className = 'feedback-widget';
+          widget.dataset.ruleId = ruleId;
+          widget.innerHTML = `
+            <span class="feedback-label">Was this finding accurate?</span>
+            <button class="feedback-btn" data-helpful="true">👍 Yes</button>
+            <button class="feedback-btn" data-helpful="false">👎 No</button>
+            <span class="feedback-thanks">Thanks — this helps Verifi improve</span>
+            <div class="feedback-reason">
+              <span class="feedback-reason-label">What was wrong with it?</span>
+              <div class="reason-options">
+                <button class="reason-btn" data-reason="false_positive">This error doesn't exist in my model</button>
+                <button class="reason-btn" data-reason="wrong_severity">Severity is wrong</button>
+                <button class="reason-btn" data-reason="unclear">Description is unclear</button>
+                <button class="reason-btn" data-reason="other">Other</button>
+              </div>
+            </div>
+          `;
+
+          const innerDiv = div.querySelector('div[style*="padding:14px"]') || div;
+          innerDiv.appendChild(widget);
+
+          const basePayload = {
+            ruleId,
+            modelType: context.modelType,
+            sector: context.sector,
+            verdict: context.verdict,
+            finding: {
+              id: finding.id,
+              status: finding.status,
+              impact: finding.impact,
+              description: finding.description,
+              irrImpact: finding.irrImpact,
+              fix: finding.fix,
+            },
+            modelProfile: context.modelProfile,
+            reportSummary: context.reportSummary,
+            keyMetrics: context.keyMetrics,
+          };
+
+          widget.querySelectorAll('.feedback-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+              const helpful = btn.dataset.helpful === 'true';
+              widget.querySelectorAll('.feedback-btn').forEach(b => {
+                b.disabled = true;
+                b.classList.remove('voted-yes', 'voted-no');
+              });
+              btn.classList.add(helpful ? 'voted-yes' : 'voted-no');
+              widget.querySelector('.feedback-thanks').classList.add('visible');
+
+              // Send initial feedback
+              sendFeedback({ ...basePayload, helpful, reason: null });
+
+              // Show reason selector only for thumbs down
+              if (!helpful) {
+                widget.querySelector('.feedback-reason').classList.add('visible');
+              }
+            });
+          });
+
+          // Reason buttons — send updated feedback with reason
+          widget.querySelectorAll('.reason-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+              widget.querySelectorAll('.reason-btn').forEach(b => b.classList.remove('selected'));
+              btn.classList.add('selected');
+              const reason = btn.dataset.reason;
+              sendFeedback({ ...basePayload, helpful: false, reason });
+            });
+          });
+
+          break;
+        }
+      }
+    });
+  }
+
+  // ── PDF Export ────────────────────────────────────────────────────────────
+  function exportPDF() {
+    const btn = document.getElementById('exportBtn');
+    btn.textContent = 'Generating…';
+    btn.disabled = true;
+
+    const raw = sessionStorage.getItem('verifi_report');
+    let fileName = 'Verifi_Report';
+    if (raw) {
+      try {
+        const data = JSON.parse(raw);
+        const now = new Date();
+        const pad = n => String(n).padStart(2, '0');
+        const datePart = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}`;
+        const timePart = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+        const namePart = (data.originalFileName || 'Model').replace(/[^a-zA-Z0-9_\-]/g, '_');
+        fileName = `Verifi_${datePart}_${timePart}_${namePart}`;
+      } catch {}
+    }
+
+    const element = document.getElementById('reportContent');
+    const opt = {
+      margin: [12, 12, 12, 12],
+      filename: fileName + '.pdf',
+      image: { type: 'jpeg', quality: 0.95 },
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    };
+
+    html2pdf().set(opt).from(element).save().then(() => {
+      btn.textContent = 'Export PDF';
+      btn.disabled = false;
+    });
+  }
+
+  // ── Fix confirmation bar ─────────────────────────────────────────────────
+  function injectFixBar(context) {
+    const container = document.getElementById('reportContent');
+    if (!container) return;
+
+    const bar = document.createElement('div');
+    bar.className = 'fix-bar';
+    bar.innerHTML = `
+      <span class="fix-bar-label">After reviewing this report, did you go fix any of the issues?</span>
+      <div class="fix-options">
+        <button class="fix-btn" data-fixed="true">✓ Yes, fixed some</button>
+        <button class="fix-btn" data-fixed="false">Not yet</button>
+      </div>
+      <span class="fix-thanks visible" style="display:none">Thanks — good to know</span>
+    `;
+    container.appendChild(bar);
+
+    bar.querySelectorAll('.fix-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const fixed = btn.dataset.fixed === 'true';
+        bar.querySelectorAll('.fix-btn').forEach(b => {
+          b.classList.remove('selected-yes', 'selected-no');
+          b.disabled = true;
+        });
+        btn.classList.add(fixed ? 'selected-yes' : 'selected-no');
+        bar.querySelector('.fix-thanks').style.display = 'block';
+
+        sendFeedback({
+          type: 'fix_confirmation',
+          fixed,
+          modelType: context.modelType,
+          sector: context.sector,
+          verdict: context.verdict,
+          reportSummary: context.reportSummary,
+          keyMetrics: context.keyMetrics,
+        });
+      });
+    });
+  }
+
+  // ── Load report from sessionStorage ──────────────────────────────────────
   const raw = sessionStorage.getItem('verifi_report');
   if (raw) {
     try {
@@ -133,6 +412,27 @@
       if (data.reportHtml) {
         document.getElementById('emptyState').style.display = 'none';
         document.getElementById('reportContent').innerHTML = data.reportHtml;
+
+        // Build shared context for all feedback submissions
+        const feedbackContext = {
+          modelType: data.modelType || null,
+          sector: data.sector || null,
+          verdict: data.verdict || null,
+          reportSummary: data.summary || null,
+          keyMetrics: data.keyMetrics || null,
+          modelProfile: data.modelProfile || null,
+          // findings array for cross-referencing
+          allFindings: data.findings || [],
+        };
+
+        // Inject feedback widgets for all non-pass findings
+        const nonPassFindings = (data.findings || []).filter(f => f.status !== 'PASS');
+        if (nonPassFindings.length > 0) {
+          setTimeout(() => injectFeedbackWidgets(nonPassFindings, feedbackContext), 50);
+        }
+
+        // Inject "did you fix" bar at bottom of report
+        setTimeout(() => injectFixBar(feedbackContext), 100);
       }
     } catch {
       // leave empty state visible
