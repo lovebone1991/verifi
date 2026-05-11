@@ -133,6 +133,11 @@ DYNAMIC METRICS RULE — only populate metrics relevant to the identified model 
 - PBSA: yieldOnCost, occupancy, capRate, holdPeriod
 - Fund: leveredIRR, distributionYield, navPerUnit, ltv, holdPeriod
 Set all non-relevant metrics to null.
+
+CRITICAL METRICS FORMAT RULE:
+- Return ONLY clean numbers or percentages. Examples: "21.9%", "4.4%", "65%", "$187/sqm", "3 years"
+- NEVER add explanations, qualifications, or parenthetical text in metric values
+- If a metric cannot be precisely determined, return null — do not return approximations with text
   "scope": "This report checks structural and mathematical integrity. Where current market benchmarks were available, findings include live sourced data with citations. A clean Verifi report is necessary but not sufficient for a reliable model."
 }
 
@@ -227,23 +232,19 @@ function generateReportHtml(report) {
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:24px">
       <div style="background:#f5f4ef;border-radius:8px;padding:12px;text-align:center">
         <div style="font-size:11px;color:#9a9990;margin-bottom:3px">cells scanned</div>
-        <div style="font-size:20px;font-weight:500">${report.cellsScanned ? report.cellsScanned.toLocaleString() : '—'}</div>
+        <div style="font-size:18px;font-weight:500">${report.cellsScanned ? report.cellsScanned.toLocaleString() : '—'}</div>
       </div>
       <div style="background:#f5f4ef;border-radius:8px;padding:12px;text-align:center">
         <div style="font-size:11px;color:#9a9990;margin-bottom:3px">issues found</div>
-        <div style="font-size:20px;font-weight:500">${(report.summary?.fail || 0) + (report.summary?.warn || 0)}</div>
+        <div style="font-size:18px;font-weight:500">${(report.summary?.fail || 0) + (report.summary?.warn || 0)}</div>
       </div>
-      <div style="background:#f5f4ef;border-radius:8px;padding:12px;text-align:center">
-        <div style="font-size:11px;color:#9a9990;margin-bottom:3px">severity</div>
-        <div style="font-size:13px;font-weight:500;margin-top:4px">
-          <span style="color:#b83224">${report.summary?.fail || 0} FAIL</span>
-          <span style="color:#9a9990;margin:0 3px">·</span>
-          <span style="color:#7a5200">${report.summary?.warn || 0} WARN</span>
-        </div>
+      <div style="background:#fdf0ee;border-radius:8px;padding:12px;text-align:center">
+        <div style="font-size:11px;color:#b83224;margin-bottom:3px">FAIL</div>
+        <div style="font-size:18px;font-weight:500;color:#b83224">${report.summary?.fail || 0}</div>
       </div>
-      <div style="background:${report.verdict === 'FAIL' ? '#fdf0ee' : report.verdict === 'WARN' ? '#fdf6e3' : '#edf5f0'};border-radius:8px;padding:12px;text-align:center">
-        <div style="font-size:11px;color:#9a9990;margin-bottom:3px">verdict</div>
-        <div style="font-size:20px;font-weight:500;color:${report.verdict === 'FAIL' ? '#b83224' : report.verdict === 'WARN' ? '#7a5200' : '#1a6b3c'}">${report.verdict}</div>
+      <div style="background:#fdf6e3;border-radius:8px;padding:12px;text-align:center">
+        <div style="font-size:11px;color:#7a5200;margin-bottom:3px">WARN</div>
+        <div style="font-size:18px;font-weight:500;color:#7a5200">${report.summary?.warn || 0}</div>
       </div>
     </div>
 
@@ -264,7 +265,7 @@ function generateReportHtml(report) {
   `;
 }
 
-async function handleRequest(request, env) {
+async function handleRequest(request, env, ctx) {
   if (request.method !== 'POST') {
     return json({ error: 'Method not allowed' }, 405);
   }
@@ -411,8 +412,8 @@ Sources: ${sources}`;
       statsPromises.push(incrementKV(env.VERIFI_STATS, 'stats:verdict:' + report.verdict));
     }
 
-    // Don't await — let it run in background, don't slow down response
-    Promise.all(statsPromises).catch(() => {});
+    // Use waitUntil so KV writes complete even after response is sent
+    ctx.waitUntil(Promise.all(statsPromises).catch(e => console.error('KV stats error:', e)));
   }
 
   // Build rich report metadata to send to frontend (for feedback enrichment)
@@ -454,7 +455,7 @@ async function incrementKV(kv, key) {
 }
 
 // Handle feedback submissions from report page
-async function handleFeedback(request, env) {
+async function handleFeedback(request, env, ctx) {
   const payload = await request.json();
   const { type, ruleId, helpful, reason, freeText, sessionId, modelType, finding, modelProfile, reportSummary, keyMetrics, sector, verdict, fixed } = payload;
 
@@ -524,7 +525,7 @@ async function handleFeedback(request, env) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 200, headers: CORS });
     }
@@ -533,9 +534,9 @@ export default {
       const url = new URL(request.url);
       let response;
       if (url.pathname === '/feedback' && request.method === 'POST') {
-        response = await handleFeedback(request, env);
+        response = await handleFeedback(request, env, ctx);
       } else {
-        response = await handleRequest(request, env);
+        response = await handleRequest(request, env, ctx);
       }
       const headers = new Headers(response.headers);
       for (const [k, v] of Object.entries(CORS)) headers.set(k, v);
