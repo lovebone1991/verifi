@@ -637,6 +637,37 @@
 
   const WORKER_URL = 'https://verifi-analyze.rex-sen-ren.workers.dev';
 
+  // Smooth animated progress — crawls realistically, stops at 88% to wait for result
+  let progressTimer = null;
+  let currentProgress = 0;
+
+  function getStatusLabel(pct) {
+    if (pct < 15) return 'Reading file…';
+    if (pct < 30) return 'Parsing model structure…';
+    if (pct < 45) return 'Running structural checks…';
+    if (pct < 60) return 'Checking accounting integrity…';
+    if (pct < 75) return 'Analyzing economic assumptions…';
+    if (pct < 88) return 'Cross-checking IRR decomposition…';
+    return 'Waiting for Claude AI…';
+  }
+
+  function startFakeProgress(from, ceiling) {
+    currentProgress = from;
+    setProgress(currentProgress, getStatusLabel(currentProgress));
+    progressTimer = setInterval(() => {
+      if (currentProgress < ceiling) {
+        const remaining = ceiling - currentProgress;
+        const step = Math.random() * Math.min(2.5, remaining * 0.12);
+        currentProgress = Math.min(currentProgress + step, ceiling);
+        setProgress(currentProgress, getStatusLabel(currentProgress));
+      }
+    }, 400);
+  }
+
+  function stopFakeProgress() {
+    if (progressTimer) { clearInterval(progressTimer); progressTimer = null; }
+  }
+
   analyzeBtn.addEventListener('click', async () => {
     if (!selectedFile) return;
     analyzeBtn.disabled = true;
@@ -644,11 +675,12 @@
     errorBox.classList.remove('visible');
 
     try {
-      // Step 1: parse Excel in browser
-      setProgress(20, 'Reading model locally…');
+      // Step 1: parse Excel in browser (fast, ~1-2s)
+      startFakeProgress(0, 30);
       const arrayBuffer = await selectedFile.arrayBuffer();
       const uint8 = new Uint8Array(arrayBuffer);
       const modelData = extractModelData(uint8);
+      stopFakeProgress();
 
       // Compact before sending
       const compactSummary = {
@@ -667,26 +699,29 @@
         };
       }
 
-      // Step 2: send JSON (not file) to Worker
-      setProgress(45, 'Running 35+ model checks…');
+      // Step 2: send to Worker + Claude API (slow, ~15-30s) — crawl to 88% while waiting
+      startFakeProgress(32, 88);
       const res = await fetch(WORKER_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(compactSummary),
       });
+      stopFakeProgress();
 
-      setProgress(75, 'Analyzing with Claude AI…');
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Unknown error' }));
         throw new Error(err.error || `Server error ${res.status}`);
       }
 
-      setProgress(95, 'Building report…');
+      // Step 3: parse response + redirect
+      setProgress(92, 'Building report…');
       const data = await res.json();
       setProgress(100, 'Done!');
       sessionStorage.setItem('verifi_report', JSON.stringify(data));
-      window.location.href = '/report';
+      setTimeout(() => { window.location.href = '/report'; }, 300);
+
     } catch (err) {
+      stopFakeProgress();
       showError(err.message || 'Something went wrong. Please try again.');
       progressWrap.classList.remove('visible');
       analyzeBtn.disabled = false;
