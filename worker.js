@@ -15,6 +15,14 @@ function json(data, status = 200) {
 
 const SYSTEM_PROMPT = `You are Verifi, a financial model verification engine built by a CFA-qualified real estate investment professional with 15+ years experience reviewing residential development, commercial RE, industrial, BTR, PBSA, debt, and fund of funds models.
 
+CORE PHILOSOPHY:
+Your primary role is to think like a seasoned fund manager or senior analyst reviewing this model with fresh eyes and deep domain expertise. You are NOT a mechanical rule-checker. You bring genuine judgment to every analysis.
+
+- Lead with your own expert analysis. The ruleset below is a framework to guide your attention, not a constraint on your thinking.
+- If your expert judgment identifies an issue not covered by the ruleset, report it. If the ruleset flags something that your judgment tells you is actually fine in context, say so and explain why.
+- When your analysis conflicts with a ruleset rule, engage in deep thinking: consider the model type, the specific context, the materiality of the issue, and make a reasoned judgment call. Always explain your reasoning.
+- Look for what experienced reviewers would catch: subtle inconsistencies, assumptions that don't hang together, structural choices that create hidden risk.
+
 You are an expert property modeler who deeply understands:
 - Three-way financial model logic (P&L → Balance Sheet → Cash Flow)
 - Property valuation: Income Capitalisation, DCF, Residual Land Value
@@ -36,9 +44,9 @@ MODEL TYPES TO IDENTIFY:
 - PBSA: bed-based income, seasonal, YoC stabilised key benchmark
 - Fund/Portfolio: asset-level CFs aggregated, add management fee + fund costs + tax + promote layers
 
-KEY VERIFICATION RULES:
+VERIFICATION FRAMEWORK (guidance for your analysis — apply judgment, not mechanical rules):
 
-LAYER 1 - STRUCTURAL (FAIL if violated):
+LAYER 1 - STRUCTURAL (typically FAIL if violated — but use judgment on materiality):
 S-01: No merged cells in calculation areas
 S-02: No formula errors (#REF!, #DIV/0!, #NAME?, #VALUE!) — especially dangerous when wrapped in IFERROR
 S-03: No circular references
@@ -48,7 +56,7 @@ S-06: Model has version/date metadata
 S-07: Toggles centralised, not scattered
 S-08: No orphaned inputs (inputs with no dependents)
 
-LAYER 2 - ACCOUNTING (FAIL if violated):
+LAYER 2 - ACCOUNTING (typically FAIL if violated — consider whether errors are material to returns):
 A-01: Cash flow roll-forward closes each period: Opening + movements = Closing
 A-02: Total debt drawdowns = total repayments at end of hold
 A-03: Sources = Uses
@@ -59,7 +67,7 @@ A-07: Fee leakages (mgmt fee, perf fee) as cash outflows
 A-08: Actual → forecast transition: no unexplained jump at cutover
 A-09: Distributions ≤ Distributable Income each period
 
-LAYER 3 - ECONOMIC (WARN if outside range):
+LAYER 3 - ECONOMIC (use as reference ranges — your expert judgment on context matters more than the range):
 E-01: Revenue/salable area = implied $/sqm — check vs sector benchmark
 E-02: Development margin within sector range (residential 15-25%, commercial 8-15%)
 E-03: Positive leverage: cost of debt < unlev IRR → levered IRR higher
@@ -218,20 +226,24 @@ function generateReportHtml(report) {
 
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:24px">
       <div style="background:#f5f4ef;border-radius:8px;padding:12px;text-align:center">
-        <div style="font-size:11px;color:#9a9990;margin-bottom:3px">checks run</div>
-        <div style="font-size:20px;font-weight:500">${report.summary?.total || 0}</div>
+        <div style="font-size:11px;color:#9a9990;margin-bottom:3px">cells scanned</div>
+        <div style="font-size:20px;font-weight:500">${report.cellsScanned ? report.cellsScanned.toLocaleString() : '—'}</div>
       </div>
-      <div style="background:#fdf0ee;border-radius:8px;padding:12px;text-align:center">
-        <div style="font-size:11px;color:#b83224;margin-bottom:3px">failed</div>
-        <div style="font-size:20px;font-weight:500;color:#b83224">${report.summary?.fail || 0}</div>
+      <div style="background:#f5f4ef;border-radius:8px;padding:12px;text-align:center">
+        <div style="font-size:11px;color:#9a9990;margin-bottom:3px">issues found</div>
+        <div style="font-size:20px;font-weight:500">${(report.summary?.fail || 0) + (report.summary?.warn || 0)}</div>
       </div>
-      <div style="background:#fdf6e3;border-radius:8px;padding:12px;text-align:center">
-        <div style="font-size:11px;color:#7a5200;margin-bottom:3px">warnings</div>
-        <div style="font-size:20px;font-weight:500;color:#7a5200">${report.summary?.warn || 0}</div>
+      <div style="background:#f5f4ef;border-radius:8px;padding:12px;text-align:center">
+        <div style="font-size:11px;color:#9a9990;margin-bottom:3px">severity</div>
+        <div style="font-size:13px;font-weight:500;margin-top:4px">
+          <span style="color:#b83224">${report.summary?.fail || 0} FAIL</span>
+          <span style="color:#9a9990;margin:0 3px">·</span>
+          <span style="color:#7a5200">${report.summary?.warn || 0} WARN</span>
+        </div>
       </div>
-      <div style="background:#edf5f0;border-radius:8px;padding:12px;text-align:center">
-        <div style="font-size:11px;color:#1a6b3c;margin-bottom:3px">passed</div>
-        <div style="font-size:20px;font-weight:500;color:#1a6b3c">${report.summary?.pass || 0}</div>
+      <div style="background:${report.verdict === 'FAIL' ? '#fdf0ee' : report.verdict === 'WARN' ? '#fdf6e3' : '#edf5f0'};border-radius:8px;padding:12px;text-align:center">
+        <div style="font-size:11px;color:#9a9990;margin-bottom:3px">verdict</div>
+        <div style="font-size:20px;font-weight:500;color:${report.verdict === 'FAIL' ? '#b83224' : report.verdict === 'WARN' ? '#7a5200' : '#1a6b3c'}">${report.verdict}</div>
       </div>
     </div>
 
@@ -361,6 +373,15 @@ Sources: ${sources}`;
   if (!jsonMatch) throw new Error('No JSON in Claude response');
 
   const report = JSON.parse(jsonMatch[0]);
+
+  // ── Calculate total cells scanned from model data ──
+  let cellsScanned = 0;
+  for (const sheetData of Object.values(compactSummary.sheets || {})) {
+    if (sheetData.dimensions) {
+      cellsScanned += (sheetData.dimensions.rows || 0) * (sheetData.dimensions.cols || 0);
+    }
+  }
+  report.cellsScanned = cellsScanned;
 
   // ── Layer 1: Store rule frequency stats in KV (fire-and-forget) ──
   if (env.VERIFI_STATS) {
