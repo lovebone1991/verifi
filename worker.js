@@ -1,4 +1,3 @@
-
 const CORS = {
   'Access-Control-Allow-Origin': 'https://verifi-seven.vercel.app',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -13,6 +12,7 @@ function json(data, status = 200) {
   });
 }
 
+// ── System Prompt (cached for cost efficiency) ────────────────────────────────
 const SYSTEM_PROMPT = `You are Verifi, a financial model verification engine built by a CFA-qualified real estate investment professional with 15+ years experience reviewing residential development, commercial RE, industrial, BTR, PBSA, debt, and fund of funds models.
 
 CORE PHILOSOPHY:
@@ -22,6 +22,7 @@ Your primary role is to think like a seasoned fund manager or senior analyst rev
 - If your expert judgment identifies an issue not covered by the ruleset, report it. If the ruleset flags something that your judgment tells you is actually fine in context, say so and explain why.
 - When your analysis conflicts with a ruleset rule, engage in deep thinking: consider the model type, the specific context, the materiality of the issue, and make a reasoned judgment call. Always explain your reasoning.
 - Look for what experienced reviewers would catch: subtle inconsistencies, assumptions that don't hang together, structural choices that create hidden risk.
+- Commercial acumen matters: flag assumptions that are mathematically correct but commercially unrealistic for the asset type, geography, and market cycle.
 
 You are an expert property modeler who deeply understands:
 - Three-way financial model logic (P&L → Balance Sheet → Cash Flow)
@@ -32,6 +33,9 @@ You are an expert property modeler who deeply understands:
 - Development vs core hold vs BTR vs PBSA model structures
 - Debt structures: construction loan, term facility, refi, capex facility
 - Fund-level mechanics: waterfall, promote, management fees, tax
+- WACD calculation: derive from debt schedule as Σ(Interest_t) / Σ(Average_Debt_t) across all periods — never assume it is directly stated
+- Leverage effect: E-IRR = Unlev IRR + (Unlev IRR - WACD) × D/E. Sensitivity: per 1pp spread change, E-IRR moves by D/E multiple. Per 1pp LVR change, effect = spread × 1/(1-LVR)². Dev models include development profit in apparent uplift — strip this out before assessing leverage effect.
+- Geography: always read location from Inputs sheet (address, suburb, state, postcode). Never guess geography from project name alone.
 
 UNIVERSAL PROPERTY MODEL CHAIN (applies to all model types):
 Gross Revenue → Net Operating Income (NOI) → AFFO/Distributable Income → Net Levered CF (gross) → Net Levered CF (post tax) → Net Levered CF (post fees) → Equity IRR
@@ -48,9 +52,9 @@ VERIFICATION FRAMEWORK (guidance for your analysis — apply judgment, not mecha
 
 LAYER 1 - STRUCTURAL (typically FAIL if violated — but use judgment on materiality):
 S-01: No merged cells in calculation areas
-S-02: No formula errors (#REF!, #DIV/0!, #NAME?, #VALUE!) — especially dangerous when wrapped in IFERROR
+S-02: No formula errors (#REF!, #DIV/0!, #NAME?, #VALUE!) — especially dangerous when wrapped in IFERROR. Count all instances, identify which sheets and which calculation areas they affect.
 S-03: No circular references
-S-04: No hardcoded values in calculation cells
+S-04: No hardcoded values in calculation cells — for each hardcode found, trace its dependents to assess whether it affects key outputs (IRR, NOI, GAV). Only flag hardcodes that influence key outputs.
 S-05: Inputs separated from calculations
 S-06: Model has version/date metadata
 S-07: Toggles centralised, not scattered
@@ -58,24 +62,24 @@ S-08: No orphaned inputs (inputs with no dependents)
 
 LAYER 2 - ACCOUNTING (typically FAIL if violated — consider whether errors are material to returns):
 A-01: Cash flow roll-forward closes each period: Opening + movements = Closing
-A-02: Total debt drawdowns = total repayments at end of hold
-A-03: Sources = Uses
-A-04: Interest expense in cash flow (not just accrued)
+A-02: Total debt drawdowns = total repayments. Verify by summing all drawdown rows and all repayment rows across the full time series. Calculate the difference — if non-zero, flag the amount.
+A-03: Sources = Uses — sum both sides and verify they balance
+A-04: Interest expense in cash flow (not just accrued). Derive WACD from debt schedule.
 A-05: Capitalised interest included in debt repayment
 A-06: Levered CF = Unlevered CF + debt schedule each period
 A-07: Fee leakages (mgmt fee, perf fee) as cash outflows
-A-08: Actual → forecast transition: no unexplained jump at cutover
+A-08: Actual → forecast transition: no ghost cash appearing or evaporating
 A-09: Distributions ≤ Distributable Income each period
 
 LAYER 3 - ECONOMIC (use as reference ranges — your expert judgment on context matters more than the range):
-E-01: Revenue/salable area = implied $/sqm — check vs sector benchmark
+E-01: Revenue/salable area = implied $/sqm — verify geography from Inputs sheet before benchmarking
 E-02: Development margin within sector range (residential 15-25%, commercial 8-15%)
-E-03: Positive leverage: cost of debt < unlev IRR → levered IRR higher
-E-04: Leverage uplift ≈ (Unlev IRR - Kd) × D/E ratio
+E-03: Positive leverage: WACD < Unlev IRR → levered IRR higher. Calculate WACD from debt schedule.
+E-04: Leverage uplift — use formula E-IRR = Unlev IRR + (Unlev IRR - WACD) × D/E. For Dev models, note that apparent uplift includes dev profit component. Verify direction (positive/negative) and reasonableness of magnitude given LVR and WACD.
 E-05: Yield on Cost vs Cap Rate spread (positive = development creates value)
 E-06: Exit cap rate assumption vs entry cap rate — flag if compression > 50bps without justification
 E-07: Unlev IRR ≈ Net Income Yield + rental growth (for stabilised hold assets, cap rate flat)
-E-08: ICR > 1.5x throughout hold period
+E-08: ICR > 1.5x throughout hold period — check every period, not just average
 E-09: LVR within covenant levels (core ≤ 65%, development ≤ 75%)
 E-10: E-IRR / Unlev IRR ratio < 2.5x (excessive leverage flag)
 E-11: WALE vs cap rate consistency (short WALE should have higher cap rate)
@@ -86,11 +90,12 @@ HIGH: directly affects IRR or materially misstates costs/revenue
 MEDIUM: affects supporting calculations or covenant checks
 LOW: structural/presentation issue
 
-Return ONLY valid JSON:
+Return ONLY valid JSON — no markdown, no backticks, no preamble:
 {
   "modelName": "string",
   "modelType": "Core Hold | Dev-Sell | Dev-Hold-Sell | BTR | PBSA | Fund | Mixed",
   "sector": "string",
+  "geography": "string — read from Inputs sheet. If not found, return Unknown",
   "verdict": "FAIL | WARN | PASS",
   "summary": { "fail": 0, "warn": 0, "pass": 0, "total": 0 },
   "findings": [
@@ -110,26 +115,29 @@ Return ONLY valid JSON:
   "keyMetrics": {
     "unleveredIRR": "string or null",
     "leveredIRR": "string or null",
-    "devMargin": "string or null (Dev models only)",
-    "yieldOnCost": "string or null (Dev/PBSA models only)",
+    "devMargin": "string or null",
+    "yieldOnCost": "string or null",
     "capRate": "string or null",
-    "ltc": "string or null (Dev models only)",
-    "ltv": "string or null (Core Hold/Fund models only)",
-    "icr": "string or null (Core Hold/Fund models only)",
-    "wale": "string or null (Core Hold models only)",
-    "passingYield": "string or null (Core Hold models only)",
-    "occupancy": "string or null (BTR/PBSA models only)",
-    "distributionYield": "string or null (Fund models only)",
-    "navPerUnit": "string or null (Fund models only)",
+    "ltc": "string or null",
+    "ltv": "string or null",
+    "icr": "string or null",
+    "wale": "string or null",
+    "passingYield": "string or null",
+    "occupancy": "string or null",
+    "distributionYield": "string or null",
+    "navPerUnit": "string or null",
     "holdPeriod": "string or null",
-    "revenuePerSqm": "string or null (where relevant)"
+    "revenuePerSqm": "string or null",
+    "wacd": "string or null"
   },
+  "scope": "This report checks structural and mathematical integrity. Where current market benchmarks were available, findings include live sourced data with citations. A clean Verifi report is necessary but not sufficient for a reliable model."
+}
 
 DYNAMIC METRICS RULE — only populate metrics relevant to the identified model type:
-- Core Hold: unleveredIRR, leveredIRR, capRate, passingYield, wale, ltv, icr, holdPeriod
+- Core Hold: unleveredIRR, leveredIRR, capRate, passingYield, wale, ltv, icr, wacd, holdPeriod
 - Dev-Sell: devMargin, ltc, revenuePerSqm, holdPeriod
-- Dev-Hold-Sell: unleveredIRR, leveredIRR, devMargin, yieldOnCost, capRate, ltc, holdPeriod
-- BTR: unleveredIRR, leveredIRR, capRate, occupancy, yieldOnCost, holdPeriod
+- Dev-Hold-Sell: unleveredIRR, leveredIRR, devMargin, yieldOnCost, capRate, ltc, wacd, holdPeriod
+- BTR: unleveredIRR, leveredIRR, capRate, occupancy, yieldOnCost, wacd, holdPeriod
 - PBSA: yieldOnCost, occupancy, capRate, holdPeriod
 - Fund: leveredIRR, distributionYield, navPerUnit, ltv, holdPeriod
 Set all non-relevant metrics to null.
@@ -137,22 +145,11 @@ Set all non-relevant metrics to null.
 CRITICAL METRICS FORMAT RULE:
 - Return ONLY clean numbers or percentages. Examples: "21.9%", "4.4%", "65%", "$187/sqm", "3 years"
 - NEVER add explanations, qualifications, or parenthetical text in metric values
-- If a metric cannot be precisely determined, return null — do not return approximations with text
-  "scope": "This report checks structural and mathematical integrity. Where current market benchmarks were available, findings include live sourced data with citations. A clean Verifi report is necessary but not sufficient for a reliable model."
-}
+- If a metric cannot be precisely determined, return null — do not return approximations with text`;
 
-MARKET BENCHMARK INSTRUCTIONS:
-          marketContext = '\n\nCURRENT MARKET BENCHMARKS (live web search, ' + new Date().toLocaleDateString('en-AU') + ' - cite sources in findings):\n' + snippets.join('\n---\n');
-- When referencing market data, include the source URL and date in the finding description like: "(Source: [URL], [date])"
-- If no live data is available for a specific metric, use your training knowledge but note it as "based on historical market data"
-- Prioritise live sourced data over training knowledge for any economic benchmarking
-- Keep citations concise — one line at the end of the description is enough`;
-
+// ── HTML Report Generator ─────────────────────────────────────────────────────
 function generateReportHtml(report) {
-  const now = new Date().toLocaleDateString('en-AU', {
-    day: 'numeric', month: 'long', year: 'numeric',
-  });
-
+  const now = new Date().toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
   const statusColor = { FAIL: '#b83224', WARN: '#7a5200', PASS: '#1a6b3c' };
   const statusBg = { FAIL: '#fdf0ee', WARN: '#fdf6e3', PASS: '#edf5f0' };
 
@@ -198,7 +195,7 @@ function generateReportHtml(report) {
             yieldOnCost: 'Yield on Cost', capRate: 'Cap Rate', ltc: 'LTC', ltv: 'LTV',
             icr: 'ICR', wale: 'WALE', passingYield: 'Passing Yield', occupancy: 'Occupancy',
             distributionYield: 'Distribution Yield', navPerUnit: 'NAV / Unit',
-            holdPeriod: 'Hold Period', revenuePerSqm: 'Revenue / sqm',
+            holdPeriod: 'Hold Period', revenuePerSqm: 'Revenue / sqm', wacd: 'WACD',
           };
           return `<div style="background:#f5f4ef;border-radius:8px;padding:10px 12px;text-align:center">
             <div style="font-size:11px;color:#9a9990;margin-bottom:3px">${labels[k] || k}</div>
@@ -224,7 +221,7 @@ function generateReportHtml(report) {
     <div style="margin-bottom:28px">
       <p style="font-size:12px;color:#9a9990;margin-bottom:4px">Verifi Audit Report · ${now}</p>
       <h1 style="font-size:20px;font-weight:400;margin-bottom:4px">${report.modelName || 'Financial Model'}</h1>
-      <p style="font-size:13px;color:#5a5a56">${report.sector || ''} · ${report.modelType || ''} · Verdict: <strong style="color:${verdictColor}">${report.verdict}</strong></p>
+      <p style="font-size:13px;color:#5a5a56">${report.sector || ''} · ${report.geography || ''} · ${report.modelType || ''} · Verdict: <strong style="color:${verdictColor}">${report.verdict}</strong></p>
     </div>
 
     ${metricsHtml ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin-bottom:24px">${metricsHtml}</div>` : ''}
@@ -265,19 +262,177 @@ function generateReportHtml(report) {
   `;
 }
 
+// ── Files API: Upload Excel to Anthropic ──────────────────────────────────────
+async function uploadFileToAnthropic(fileBytes, fileName, apiKey) {
+  const formData = new FormData();
+  const blob = new Blob([fileBytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  formData.append('file', blob, fileName);
+
+  const res = await fetch('https://api.anthropic.com/v1/files', {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-beta': 'files-api-2025-04-14',
+    },
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Files API upload failed: ${res.status} ${err}`);
+  }
+
+  const data = await res.json();
+  return data.id;
+}
+
+// ── Files API: Delete file from Anthropic ────────────────────────────────────
+async function deleteFileFromAnthropic(fileId, apiKey) {
+  await fetch(`https://api.anthropic.com/v1/files/${fileId}`, {
+    method: 'DELETE',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-beta': 'files-api-2025-04-14',
+    },
+  });
+}
+
+// ── Main Analysis Handler ─────────────────────────────────────────────────────
 async function handleRequest(request, env, ctx) {
   if (request.method !== 'POST') {
     return json({ error: 'Method not allowed' }, 405);
   }
 
-  // Now receives pre-parsed JSON from frontend, not raw Excel file
-  const compactSummary = await request.json();
+  const contentType = request.headers.get('Content-Type') || '';
 
+  // ── New path: Excel file upload via Files API + xlsx Skill ──────────────
+  if (contentType.includes('multipart/form-data')) {
+    const formData = await request.formData();
+    const file = formData.get('file');
+
+    if (!file || typeof file === 'string') {
+      return json({ error: 'No file uploaded' }, 400);
+    }
+
+    const fileBytes = new Uint8Array(await file.arrayBuffer());
+    const fileName = file.name || 'model.xlsx';
+    const cellsScanned = null; // Scanner stats come from frontend separately
+
+    let fileId = null;
+    try {
+      // Step 1: Upload to Anthropic Files API
+      fileId = await uploadFileToAnthropic(fileBytes, fileName, env.ANTHROPIC_API_KEY);
+
+      // Step 2: Analyse with xlsx Skill + Code Execution + Prompt Caching
+      const analysisRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': env.ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'files-api-2025-04-14,code-execution-2025-05-22',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 8000,
+          system: [
+            {
+              type: 'text',
+              text: SYSTEM_PROMPT,
+              cache_control: { type: 'ephemeral' }, // Prompt caching
+            }
+          ],
+          tools: [{ type: 'code_execution_20250522', name: 'code_execution' }],
+          messages: [{
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: `Please audit this real estate financial model thoroughly. Use code execution to read and analyse the Excel file directly — read all sheets, verify all calculations, derive WACD from the debt schedule, check all time series data. Return your analysis as a single valid JSON object matching the schema in your instructions.`,
+              },
+              {
+                type: 'document',
+                source: {
+                  type: 'file',
+                  file_id: fileId,
+                },
+              },
+            ],
+          }],
+        }),
+      });
+
+      if (!analysisRes.ok) {
+        const err = await analysisRes.text();
+        throw new Error(`Anthropic API error ${analysisRes.status}: ${err}`);
+      }
+
+      const analysisData = await analysisRes.json();
+
+      // Extract text from response (may include code execution results)
+      const text = (analysisData.content || [])
+        .filter(b => b.type === 'text')
+        .map(b => b.text)
+        .join('');
+
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error('No JSON in Claude response');
+
+      const report = JSON.parse(jsonMatch[0]);
+      report.cellsScanned = formData.get('cellsScanned') ? parseInt(formData.get('cellsScanned')) : null;
+
+      // Step 3: KV stats (fire and forget with waitUntil)
+      if (env.VERIFI_STATS) {
+        const statsPromises = [
+          incrementKV(env.VERIFI_STATS, 'stats:total_analyses'),
+          report.modelType ? incrementKV(env.VERIFI_STATS, 'stats:modelType:' + report.modelType.replace(/[^a-zA-Z0-9]/g, '_')) : Promise.resolve(),
+          report.verdict ? incrementKV(env.VERIFI_STATS, 'stats:verdict:' + report.verdict) : Promise.resolve(),
+        ];
+        if (report.findings) {
+          for (const f of report.findings) {
+            if (f.status !== 'PASS') {
+              statsPromises.push(incrementKV(env.VERIFI_STATS, 'stats:rule:' + f.id));
+            }
+          }
+        }
+        ctx.waitUntil(Promise.all(statsPromises).catch(e => console.error('KV error:', e)));
+      }
+
+      // Build rich report metadata for feedback
+      const reportMeta = {
+        reportId: crypto.randomUUID(),
+        modelType: report.modelType || null,
+        sector: report.sector || null,
+        geography: report.geography || null,
+        verdict: report.verdict || null,
+        summary: report.summary || {},
+        keyMetrics: report.keyMetrics || {},
+        findings: (report.findings || []).map(f => ({
+          id: f.id, status: f.status, impact: f.impact,
+          description: f.description || '', irrImpact: f.irrImpact || null, fix: f.fix || '',
+        })),
+        modelProfile: { fileName },
+      };
+
+      return json({ reportHtml: generateReportHtml(report), ...reportMeta });
+
+    } finally {
+      // Step 4: Always delete file from Anthropic (privacy)
+      if (fileId) {
+        ctx.waitUntil(deleteFileFromAnthropic(fileId, env.ANTHROPIC_API_KEY));
+      }
+    }
+  }
+
+  // ── Legacy path: JSON summary from scanner (kept as fallback) ────────────
+  const compactSummary = await request.json();
   if (!compactSummary || !compactSummary.sheetNames) {
     return json({ error: 'Invalid model data' }, 400);
   }
 
-  // ── Step 1: Identify model type + geography for targeted search ──────────
+  // Tavily market research
   let marketContext = '';
   try {
     const identifyRes = await fetch('https://api.anthropic.com/v1/messages', {
@@ -288,14 +443,11 @@ async function handleRequest(request, env, ctx) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 300,
         messages: [{
           role: 'user',
-          content: `Based on this Excel model structure, return ONLY valid JSON with no other text: {"modelType":"Core Hold|Dev-Sell|Dev-Hold-Sell|BTR|PBSA|Fund","sector":"e.g. Industrial|Residential|Office|Retail|Mixed","geography":"e.g. Sydney|Melbourne|Australia|Unknown","searchQueries":["2-3 specific queries for current market benchmarks"]}
-
-Sheet names: ${JSON.stringify(compactSummary.sheetNames)}
-Global stats: ${JSON.stringify(compactSummary.globalStats)}`,
+          content: 'Based on this Excel model structure, return ONLY valid JSON: {"modelType":"string","sector":"string","geography":"string","searchQueries":["2-3 specific queries for current market benchmarks"]}\n\nSheet names: ' + JSON.stringify(compactSummary.sheetNames),
         }],
       }),
     });
@@ -304,47 +456,31 @@ Global stats: ${JSON.stringify(compactSummary.globalStats)}`,
       const identifyData = await identifyRes.json();
       const identifyText = identifyData.content[0].text;
       const identifyJson = JSON.parse(identifyText.match(/\{[\s\S]*\}/)[0]);
-      const { searchQueries = [], modelType = '', geography = '', sector = '' } = identifyJson;
+      const { searchQueries = [] } = identifyJson;
 
-      // ── Step 2: Tavily web search for market benchmarks ──────────────────
       if (env.TAVILY_API_KEY && searchQueries.length > 0) {
-        const tavilyResults = await Promise.allSettled(
-          searchQueries.slice(0, 2).map(query =>
-            fetch('https://api.tavily.com/search', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                api_key: env.TAVILY_API_KEY,
-                query,
-                search_depth: 'basic',
-                max_results: 3,
-                include_answer: true,
-              }),
-            }).then(r => r.json())
-          )
-        );
+        const tavilyRes = await fetch('https://api.tavily.com/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            api_key: env.TAVILY_API_KEY,
+            query: searchQueries.slice(0, 2).join(' AND '),
+            search_depth: 'basic',
+            max_results: 3,
+            include_answer: true,
+          }),
+        }).then(r => r.json());
 
-        const snippets = tavilyResults
-          .filter(r => r.status === 'fulfilled' && r.value?.answer)
-          .map(r => {
-            const { answer, results = [] } = r.value;
-            const sources = results.slice(0, 2).map(s => `${s.title} (${s.url})`).join(', ');
-            return `${answer}
-Sources: ${sources}`;
-          })
-          .filter(Boolean);
-
-        if (snippets.length > 0) {
-          marketContext = '\n\nCURRENT MARKET BENCHMARKS (live web search, ' + new Date().toLocaleDateString('en-AU') + ' - cite sources in findings):\n' + snippets.join('\n---\n');
+        if (tavilyRes?.answer) {
+          const sources = (tavilyRes.results || []).slice(0, 2).map(s => s.url).join(', ');
+          marketContext = '\n\nCURRENT MARKET BENCHMARKS (live web search, ' + new Date().toLocaleDateString('en-AU') + ' - cite sources in findings):\n' + tavilyRes.answer + '\nSources: ' + sources;
         }
       }
     }
   } catch (e) {
     console.error('Market research error:', e.message);
-    // Continue without market context
   }
 
-  // ── Main analysis ──
   const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -353,19 +489,25 @@ Sources: ${sources}`;
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 4000,
-      system: SYSTEM_PROMPT,
+      model: 'claude-sonnet-4-6',
+      max_tokens: 6000,
+      system: [
+        {
+          type: 'text',
+          text: SYSTEM_PROMPT,
+          cache_control: { type: 'ephemeral' },
+        }
+      ],
       messages: [{
         role: 'user',
-        content: `Please audit this real estate financial model and return the JSON report.\n\nModel structure extracted from Excel:\n${JSON.stringify(compactSummary, null, 2)}${marketContext}`,
+        content: 'Please audit this real estate financial model and return the JSON report.\n\nModel structure extracted from Excel:\n' + JSON.stringify(compactSummary, null, 2) + marketContext,
       }],
     }),
   });
 
   if (!anthropicRes.ok) {
     const errText = await anthropicRes.text();
-    throw new Error(`Anthropic API error ${anthropicRes.status}: ${errText}`);
+    throw new Error('Anthropic API error ' + anthropicRes.status + ': ' + errText);
   }
 
   const anthropicData = await anthropicRes.json();
@@ -375,7 +517,6 @@ Sources: ${sources}`;
 
   const report = JSON.parse(jsonMatch[0]);
 
-  // ── Calculate total cells scanned from model data ──
   let cellsScanned = 0;
   for (const sheetData of Object.values(compactSummary.sheets || {})) {
     if (sheetData.dimensions) {
@@ -384,146 +525,101 @@ Sources: ${sources}`;
   }
   report.cellsScanned = cellsScanned;
 
-  // ── Layer 1: Store rule frequency stats in KV (fire-and-forget) ──
   if (env.VERIFI_STATS) {
-    const statsPromises = [];
-
-    // Count total analyses
-    statsPromises.push(incrementKV(env.VERIFI_STATS, 'stats:total_analyses'));
-
-    // Count by model type
-    if (report.modelType) {
-      const typeKey = 'stats:modelType:' + report.modelType.replace(/[^a-zA-Z0-9]/g, '_');
-      statsPromises.push(incrementKV(env.VERIFI_STATS, typeKey));
-    }
-
-    // Count each rule triggered (FAIL or WARN only)
+    const statsPromises = [
+      incrementKV(env.VERIFI_STATS, 'stats:total_analyses'),
+      report.modelType ? incrementKV(env.VERIFI_STATS, 'stats:modelType:' + report.modelType.replace(/[^a-zA-Z0-9]/g, '_')) : Promise.resolve(),
+      report.verdict ? incrementKV(env.VERIFI_STATS, 'stats:verdict:' + report.verdict) : Promise.resolve(),
+    ];
     if (report.findings) {
-      for (const finding of report.findings) {
-        if (finding.status !== 'PASS') {
-          statsPromises.push(incrementKV(env.VERIFI_STATS, 'stats:rule:' + finding.id));
-          statsPromises.push(incrementKV(env.VERIFI_STATS, 'stats:rule:' + finding.id + ':' + finding.status));
+      for (const f of report.findings) {
+        if (f.status !== 'PASS') {
+          statsPromises.push(incrementKV(env.VERIFI_STATS, 'stats:rule:' + f.id));
         }
       }
     }
-
-    // Count verdicts
-    if (report.verdict) {
-      statsPromises.push(incrementKV(env.VERIFI_STATS, 'stats:verdict:' + report.verdict));
-    }
-
-    // Use waitUntil so KV writes complete even after response is sent
-    ctx.waitUntil(Promise.all(statsPromises).catch(e => console.error('KV stats error:', e)));
+    ctx.waitUntil(Promise.all(statsPromises).catch(e => console.error('KV error:', e)));
   }
 
-  // Build rich report metadata to send to frontend (for feedback enrichment)
   const reportMeta = {
     reportId: crypto.randomUUID(),
     modelType: report.modelType || null,
     sector: report.sector || null,
+    geography: report.geography || null,
     verdict: report.verdict || null,
     summary: report.summary || {},
     keyMetrics: report.keyMetrics || {},
     findings: (report.findings || []).map(f => ({
-      id: f.id,
-      status: f.status,
-      impact: f.impact,
-      description: f.description || '',
-      irrImpact: f.irrImpact || null,
-      fix: f.fix || '',
+      id: f.id, status: f.status, impact: f.impact,
+      description: f.description || '', irrImpact: f.irrImpact || null, fix: f.fix || '',
     })),
     modelProfile: {
       totalSheets: compactSummary.totalSheets,
       sheetNames: compactSummary.sheetNames,
       totalRefErrors: compactSummary.globalStats?.totalRefErrors || 0,
       totalHardcodes: compactSummary.globalStats?.totalHardcodes || 0,
-      sheetsWithErrors: compactSummary.globalStats?.sheetsWithErrors || [],
-      formulaCounts: Object.fromEntries(
-        Object.entries(compactSummary.sheets || {}).map(([k, v]) => [k, v.formulaCount || 0])
-      ),
     },
   };
 
   return json({ reportHtml: generateReportHtml(report), ...reportMeta });
 }
 
-// Increment a KV counter atomically
+// ── KV increment helper ───────────────────────────────────────────────────────
 async function incrementKV(kv, key) {
   const current = await kv.get(key);
   const val = current ? parseInt(current) + 1 : 1;
   await kv.put(key, String(val));
 }
 
-// Handle feedback submissions from report page
+// ── Feedback Handler ──────────────────────────────────────────────────────────
 async function handleFeedback(request, env, ctx) {
   const payload = await request.json();
-  const { type, ruleId, helpful, reason, freeText, sessionId, modelType, finding, modelProfile, reportSummary, keyMetrics, sector, verdict, fixed } = payload;
+  const { type, ruleId, helpful, reason, freeText, sessionId, modelType, finding, modelProfile, reportSummary, keyMetrics, sector, geography, verdict, fixed } = payload;
 
   if (!env.VERIFI_STATS) return json({ ok: true });
 
   const timestamp = new Date().toISOString();
 
-  // ── Fix confirmation (separate event type) ──
   if (type === 'fix_confirmation') {
     const recordKey = 'fix:' + timestamp + ':' + (sessionId || 'anon');
-    await Promise.all([
+    ctx.waitUntil(Promise.all([
       incrementKV(env.VERIFI_STATS, 'fix:total'),
       incrementKV(env.VERIFI_STATS, fixed ? 'fix:yes' : 'fix:no'),
       env.VERIFI_STATS.put(recordKey, JSON.stringify({
         timestamp, type: 'fix_confirmation', fixed,
-        sessionId: sessionId || null,
-        modelType: modelType || null,
-        sector: sector || null,
-        verdict: verdict || null,
-        reportSummary: reportSummary || null,
-        keyMetrics: keyMetrics || null,
+        sessionId: sessionId || null, modelType: modelType || null,
+        sector: sector || null, geography: geography || null,
+        verdict: verdict || null, reportSummary: reportSummary || null, keyMetrics: keyMetrics || null,
       }), { expirationTtl: 60 * 60 * 24 * 365 }),
-    ]);
+    ]).catch(e => console.error('KV fix error:', e)));
     return json({ ok: true });
   }
 
-  // ── Finding feedback ──
   if (!ruleId || typeof helpful !== 'boolean') {
     return json({ error: 'Invalid feedback' }, 400);
   }
 
   const suffix = helpful ? 'helpful' : 'not_helpful';
+  const recordKey = 'record:' + timestamp + ':' + ruleId + ':' + (sessionId || 'anon');
 
-  // 1. Aggregate counters
-  const counters = [
+  ctx.waitUntil(Promise.all([
     incrementKV(env.VERIFI_STATS, 'feedback:' + ruleId + ':' + suffix),
     incrementKV(env.VERIFI_STATS, 'feedback:total'),
-  ];
-  if (modelType) {
-    counters.push(incrementKV(env.VERIFI_STATS, 'feedback:' + ruleId + ':' + modelType.replace(/[^a-zA-Z0-9]/g, '_') + ':' + suffix));
-  }
-  if (!helpful && reason) {
-    counters.push(incrementKV(env.VERIFI_STATS, 'feedback:' + ruleId + ':reason:' + reason));
-  }
-  await Promise.all(counters);
-
-  // 2. Rich record for pattern analysis
-  const recordKey = 'record:' + timestamp + ':' + ruleId + ':' + (sessionId || 'anon');
-  const record = {
-    timestamp,
-    type: 'finding_feedback',
-    sessionId: sessionId || null,
-    ruleId,
-    helpful,
-    reason: reason || null,          // false_positive | wrong_severity | unclear | other
-    modelType: modelType || null,
-    sector: sector || null,
-    verdict: verdict || null,
-    finding: finding || null,
-    modelProfile: modelProfile || null,
-    reportSummary: reportSummary || null,
-    keyMetrics: keyMetrics || null,
-  };
-  await env.VERIFI_STATS.put(recordKey, JSON.stringify(record), { expirationTtl: 60 * 60 * 24 * 365 });
+    modelType ? incrementKV(env.VERIFI_STATS, 'feedback:' + ruleId + ':' + modelType.replace(/[^a-zA-Z0-9]/g, '_') + ':' + suffix) : Promise.resolve(),
+    !helpful && reason ? incrementKV(env.VERIFI_STATS, 'feedback:' + ruleId + ':reason:' + reason) : Promise.resolve(),
+    env.VERIFI_STATS.put(recordKey, JSON.stringify({
+      timestamp, type: 'finding_feedback', sessionId: sessionId || null,
+      ruleId, helpful, reason: reason || null, freeText: freeText || null,
+      modelType: modelType || null, sector: sector || null, geography: geography || null,
+      verdict: verdict || null, finding: finding || null,
+      modelProfile: modelProfile || null, reportSummary: reportSummary || null, keyMetrics: keyMetrics || null,
+    }), { expirationTtl: 60 * 60 * 24 * 365 }),
+  ]).catch(e => console.error('KV feedback error:', e)));
 
   return json({ ok: true });
 }
 
+// ── Fetch Handler ─────────────────────────────────────────────────────────────
 export default {
   async fetch(request, env, ctx) {
     if (request.method === 'OPTIONS') {

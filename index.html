@@ -380,7 +380,7 @@
 
   <p class="privacy-note">
     <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 1.5L2 3.5V7c0 2.485 2.14 4.5 5 5 2.86-.5 5-2.515 5-5V3.5L7 1.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M5 7l1.5 1.5L9 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    Your model is parsed locally in your browser. Raw file data never leaves your device.
+    Your file is uploaded to Anthropic's secure servers for analysis and permanently deleted immediately after. No data is retained.
   </p>
 
   <div class="features">
@@ -629,12 +629,23 @@
         };
       }
 
-      // ── Send to Cloudflare Worker for Claude analysis ─────────────────────
+      // ── Send raw file to Worker (Files API path) ────────────────────────────
       setProgress(62, 'Analysing with AI…');
+
+      // Calculate cells scanned for stats display
+      let totalCells = 0;
+      for (const sheet of Object.values(modelData.sheets || {})) {
+        if (sheet.dimensions) totalCells += (sheet.dimensions.rows || 0) * (sheet.dimensions.cols || 0);
+      }
+
+      // Send raw Excel file via multipart
+      const form = new FormData();
+      form.append('file', selectedFile, selectedFile.name);
+      form.append('cellsScanned', String(totalCells));
+
       const res = await fetch(WORKER_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(compactSummary),
+        body: form,
       });
 
       setProgress(90, 'Building report…');
