@@ -1,8 +1,13 @@
 import Anthropic from '@anthropic-ai/sdk';
 
-// Vercel Function config — enable Fluid Compute + extend timeout
+// Vercel Function config — enable Fluid Compute + extend timeout + increase body size
 export const config = {
-  maxDuration: 300, // 300 seconds with Fluid Compute
+  maxDuration: 300,
+  api: {
+    bodyParser: false,    // We handle raw body manually for multipart
+    responseLimit: false,
+    sizeLimit: '50mb',
+  },
 };
 
 const SYSTEM_PROMPT = `You are Verifi, a financial model verification engine built by a CFA-qualified real estate investment professional with 15+ years experience reviewing residential development, commercial RE, industrial, BTR, PBSA, debt, and fund of funds models.
