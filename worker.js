@@ -325,14 +325,14 @@ async function handleRequest(request, env, ctx) {
       // Step 1: Upload to Anthropic Files API
       fileId = await uploadFileToAnthropic(fileBytes, fileName, env.ANTHROPIC_API_KEY);
 
-      // Step 2: Analyse with xlsx Skill + Code Execution + Prompt Caching
+      // Step 2: Analyse with Code Execution — Claude reads Excel directly with pandas/openpyxl
       const analysisRes = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-api-key': env.ANTHROPIC_API_KEY,
           'anthropic-version': '2023-06-01',
-          'anthropic-beta': 'files-api-2025-04-14,code-execution-2025-05-22',
+          'anthropic-beta': 'files-api-2025-04-14',
         },
         body: JSON.stringify({
           model: 'claude-sonnet-4-6',
@@ -341,23 +341,20 @@ async function handleRequest(request, env, ctx) {
             {
               type: 'text',
               text: SYSTEM_PROMPT,
-              cache_control: { type: 'ephemeral' }, // Prompt caching
+              cache_control: { type: 'ephemeral' },
             }
           ],
-          tools: [{ type: 'code_execution_20250522', name: 'code_execution' }],
+          tools: [{ type: 'code_execution_20250825', name: 'code_execution' }],
           messages: [{
             role: 'user',
             content: [
               {
                 type: 'text',
-                text: `Please audit this real estate financial model thoroughly. Use code execution to read and analyse the Excel file directly — read all sheets, verify all calculations, derive WACD from the debt schedule, check all time series data. Return your analysis as a single valid JSON object matching the schema in your instructions.`,
+                text: 'Please audit this real estate financial model thoroughly. Use code execution with pandas/openpyxl to read all sheets directly from the uploaded Excel file. Verify all calculations, derive WACD from the debt schedule by summing interest expense over average outstanding debt balance each period, check time series data for debt drawdown = repayment, sources = uses, and all other checks in your framework. Return your analysis as a single valid JSON object matching the schema in your instructions.',
               },
               {
-                type: 'document',
-                source: {
-                  type: 'file',
-                  file_id: fileId,
-                },
+                type: 'container_upload',
+                file_id: fileId,
               },
             ],
           }],

@@ -643,10 +643,20 @@
       form.append('file', selectedFile, selectedFile.name);
       form.append('cellsScanned', String(totalCells));
 
-      const res = await fetch(WORKER_URL, {
-        method: 'POST',
-        body: form,
-      });
+      // Long timeout for Code Execution (sandbox startup can take 60-90s)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 min timeout
+
+      let res;
+      try {
+        res = await fetch(WORKER_URL, {
+          method: 'POST',
+          body: form,
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       setProgress(90, 'Building report…');
 
