@@ -1,7 +1,12 @@
 {
-  "version": 2,
-  "routes": [
-    { "src": "/report", "dest": "/report.html" },
-    { "src": "/", "dest": "/index.html" }
-  ]
+  "functions": {
+    "api/analyze.js": {
+      "maxDuration": 300
+    }
+  },
+  "api": {
+    "bodyParser": {
+      "sizeLimit": "50mb"
+    }
+  }
 }

@@ -561,7 +561,7 @@
   function showError(msg) { errorBox.textContent = msg; errorBox.classList.add('visible'); }
   function setProgress(pct, label) { progressFill.style.width = pct + '%'; progressStatus.textContent = label; }
 
-  const WORKER_URL = 'https://verifi-analyze.rex-sen-ren.workers.dev';
+  const WORKER_URL = '/api/analyze'; // Vercel Function — 300s timeout via Fluid Compute
 
   analyzeBtn.addEventListener('click', async () => {
     if (!selectedFile) return;

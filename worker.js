@@ -323,9 +323,12 @@ async function handleRequest(request, env, ctx) {
     let fileId = null;
     try {
       // Step 1: Upload to Anthropic Files API
+      console.log('Step 1: Uploading file to Anthropic...', fileName, fileBytes.length, 'bytes');
       fileId = await uploadFileToAnthropic(fileBytes, fileName, env.ANTHROPIC_API_KEY);
+      console.log('Step 1 done. File ID:', fileId);
 
       // Step 2: Analyse with Code Execution — Claude reads Excel directly with pandas/openpyxl
+      console.log('Step 2: Starting Code Execution analysis...');
       const analysisRes = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
