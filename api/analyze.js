@@ -1,12 +1,11 @@
 import Anthropic from '@anthropic-ai/sdk';
 
-// Vercel Function config — enable Fluid Compute + extend timeout + increase body size
+// Vercel Function config
 export const config = {
   maxDuration: 300,
   api: {
-    bodyParser: false,    // We handle raw body manually for multipart
+    bodyParser: false,
     responseLimit: false,
-    sizeLimit: '50mb',
   },
 };
 
@@ -30,9 +29,21 @@ You are an expert property modeler who deeply understands:
 - Development vs core hold vs BTR vs PBSA model structures
 - Debt structures: construction loan, term facility, refi, capex facility
 - Fund-level mechanics: waterfall, promote, management fees, tax
-- WACD calculation: derive from debt schedule as Σ(Interest_t) / Σ(Average_Debt_t) across all periods
-- Leverage effect: E-IRR = Unlev IRR + (Unlev IRR - WACD) × D/E
-- Geography: always read location from Inputs sheet. Never guess from project name alone.
+- WACD calculation: derive from debt schedule as Σ(Interest_t) / Σ(Average_Debt_t) across all periods — never assume it is directly stated
+- Leverage effect: E-IRR = Unlev IRR + (Unlev IRR - WACD) × D/E. Sensitivity: per 1pp spread change, E-IRR moves by D/E multiple. Per 1pp LVR change, effect = spread × 1/(1-LVR)². Dev models include development profit in apparent uplift — strip this out before assessing leverage effect.
+- Geography: always read location from Inputs sheet (address, suburb, state, postcode). Never guess geography from project name alone.
+
+INSTRUCTIONS FOR CODE EXECUTION:
+You have been given an Excel file. Use Python with pandas and openpyxl to read and analyse it thoroughly:
+
+1. First, list all sheet names and dimensions
+2. For each sheet, read the full data (all rows, all columns)
+3. Identify key financial rows by scanning for labels containing: IRR, NOI, Revenue, Debt, Drawdown, Repayment, Interest, Cap Rate, Yield, LVR, LTC, ICR, WACD, Distribution, NAV, GAV
+4. For debt/accounting checks, sum the FULL time series (all columns) for drawdown rows and repayment rows — verify they are equal
+5. Calculate WACD by summing all interest expense rows and dividing by average outstanding debt across all periods
+6. Read the Inputs sheet to find geography (address, suburb, state, postcode)
+7. Identify formula errors by checking for #REF!, #DIV/0!, #NAME? in cell values
+8. After thorough analysis, output your findings as a single JSON object
 
 UNIVERSAL PROPERTY MODEL CHAIN:
 Gross Revenue → NOI → AFFO → Net Levered CF (gross) → Net Levered CF (post tax) → Net Levered CF (post fees) → Equity IRR
@@ -51,7 +62,7 @@ LAYER 1 - STRUCTURAL:
 S-01: No merged cells in calculation areas
 S-02: No formula errors (#REF!, #DIV/0!, #NAME?) — especially IFERROR-wrapped. Count all instances by sheet.
 S-03: No circular references
-S-04: Hardcoded values — trace dependents to assess impact on IRR/NOI/GAV
+S-04: Hardcoded values — trace dependents to assess impact on IRR/NOI/GAV. Only flag hardcodes that influence key outputs.
 S-05: Inputs separated from calculations
 S-06: Model has version/date metadata
 S-07: Toggles centralised
@@ -59,9 +70,9 @@ S-08: No orphaned inputs
 
 LAYER 2 - ACCOUNTING:
 A-01: Cash flow roll-forward closes each period
-A-02: Total debt drawdowns = total repayments — sum the full time series and calculate the difference
-A-03: Sources = Uses
-A-04: Interest expense in cash flow — derive WACD from debt schedule
+A-02: Total debt drawdowns = total repayments — sum the FULL time series and calculate the difference. Report the exact gap amount.
+A-03: Sources = Uses — sum both sides exactly
+A-04: Interest expense in cash flow — calculate WACD from debt schedule
 A-05: Capitalised interest in debt repayment
 A-06: Levered CF = Unlevered CF + debt schedule
 A-07: Fee leakages as cash outflows
@@ -69,20 +80,20 @@ A-08: No ghost cash appearing or evaporating throughout the model
 A-09: Distributions ≤ Distributable Income
 
 LAYER 3 - ECONOMIC:
-E-01: Revenue/area = implied $/sqm — verify geography before benchmarking
-E-02: Development margin within sector range
-E-03: Positive leverage — calculate WACD from debt schedule
+E-01: Revenue/area = implied $/sqm — verify geography from Inputs sheet before benchmarking
+E-02: Development margin within sector range (residential 15-25%, commercial 8-15%)
+E-03: Positive leverage — calculate WACD from debt schedule, verify Unlev IRR > WACD
 E-04: Leverage uplift = (Unlev IRR - WACD) × D/E — verify direction and magnitude
 E-05: Yield on Cost vs Cap Rate spread
-E-06: Exit cap rate vs entry cap rate
+E-06: Exit cap rate vs entry cap rate — flag if compression > 50bps
 E-07: Unlev IRR ≈ Net Income Yield + rental growth
-E-08: ICR > 1.5x throughout — check every period
+E-08: ICR > 1.5x throughout — check EVERY period, not just average
 E-09: LVR within covenants
 E-10: E-IRR / Unlev IRR < 2.5x
 E-11: WALE vs cap rate consistency
 E-12: Equivalent yield between passing and reversionary
 
-Return ONLY valid JSON:
+Return ONLY valid JSON — no markdown, no backticks, no preamble:
 {
   "modelName": "string",
   "modelType": "Core Hold | Dev-Sell | Dev-Hold-Sell | BTR | PBSA | Fund | Mixed",
@@ -96,7 +107,7 @@ Return ONLY valid JSON:
     "status": "FAIL | WARN | PASS",
     "title": "string",
     "impact": "HIGH | MEDIUM | LOW | NONE",
-    "description": "string",
+    "description": "string — be specific, include actual numbers and cell references found",
     "irrImpact": "string or null",
     "cells": [{ "ref": "Sheet!Cell", "note": "string", "value": "string" }],
     "fix": "string"
@@ -123,12 +134,12 @@ export default async function handler(req, res) {
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
   try {
-    // Parse multipart form data
+    // Read raw body
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
     const buffer = Buffer.concat(chunks);
 
-    // Extract file from multipart
+    // Parse multipart
     const contentType = req.headers['content-type'] || '';
     const boundary = contentType.split('boundary=')[1];
     if (!boundary) return res.status(400).json({ error: 'No boundary in multipart' });
@@ -143,34 +154,47 @@ export default async function handler(req, res) {
     const fileName = filePart.filename || 'model.xlsx';
     const cellsScanned = cellsScannedPart ? parseInt(cellsScannedPart.data.toString()) : null;
 
+    console.log('Uploading file:', fileName, fileBytes.length, 'bytes');
+
     // Step 1: Upload to Anthropic Files API
     const fileBlob = new Blob([fileBytes], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     });
+
     const uploadedFile = await client.beta.files.upload(
-      { file: new File([fileBlob], fileName) },
-      { headers: { 'anthropic-beta': 'files-api-2025-04-14' } }
+      { file: new File([fileBlob], fileName, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }) },
+      { betas: ['files-api-2025-04-14'] }
     );
+
     const fileId = uploadedFile.id;
+    console.log('File uploaded. ID:', fileId);
+
+    let report = null;
 
     try {
-      // Step 2: Analyse with Code Execution
+      // Step 2: Analyse with Code Execution using file_ids
+      console.log('Starting Code Execution analysis...');
+
       const response = await client.beta.messages.create(
         {
           model: 'claude-sonnet-4-6',
           max_tokens: 8000,
+          betas: ['files-api-2025-04-14'],
           system: [{
             type: 'text',
             text: SYSTEM_PROMPT,
             cache_control: { type: 'ephemeral' },
           }],
-          tools: [{ type: 'code_execution_20250825', name: 'code_execution' }],
+          tools: [{
+            type: 'code_execution_20250825',
+            name: 'code_execution',
+          }],
           messages: [{
             role: 'user',
             content: [
               {
                 type: 'text',
-                text: 'Please audit this real estate financial model thoroughly. Use code execution with pandas/openpyxl to read all sheets directly. Verify all calculations, derive WACD from the debt schedule, check time series data for debt drawdown = repayment, sources = uses. Return your analysis as a single valid JSON object matching the schema in your instructions.',
+                text: 'Please audit the Excel financial model in the uploaded file. Use Python with pandas/openpyxl to read all sheets directly. Follow all instructions in your system prompt. Return your analysis as a single valid JSON object.',
               },
               {
                 type: 'container_upload',
@@ -178,9 +202,10 @@ export default async function handler(req, res) {
               },
             ],
           }],
-        },
-        { headers: { 'anthropic-beta': 'files-api-2025-04-14' } }
+        }
       );
+
+      console.log('Analysis complete. Stop reason:', response.stop_reason);
 
       // Extract text from response
       const text = (response.content || [])
@@ -188,40 +213,42 @@ export default async function handler(req, res) {
         .map(b => b.text)
         .join('');
 
+      console.log('Response text length:', text.length);
+
       const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error('No JSON in Claude response');
+      if (!jsonMatch) throw new Error('No JSON in Claude response. Text: ' + text.substring(0, 500));
 
-      const report = JSON.parse(jsonMatch[0]);
-      report.cellsScanned = cellsScanned;
-
-      // Build report HTML (reuse same generator)
-      const reportHtml = generateReportHtml(report);
-
-      return res.status(200).json({
-        reportHtml,
-        reportId: crypto.randomUUID(),
-        modelType: report.modelType || null,
-        sector: report.sector || null,
-        geography: report.geography || null,
-        verdict: report.verdict || null,
-        summary: report.summary || {},
-        keyMetrics: report.keyMetrics || {},
-        findings: (report.findings || []).map(f => ({
-          id: f.id, status: f.status, impact: f.impact,
-          description: f.description || '', irrImpact: f.irrImpact || null, fix: f.fix || '',
-        })),
-        modelProfile: { fileName },
-      });
+      report = JSON.parse(jsonMatch[0]);
 
     } finally {
       // Always delete file from Anthropic
+      console.log('Deleting file:', fileId);
       await client.beta.files.delete(fileId,
-        { headers: { 'anthropic-beta': 'files-api-2025-04-14' } }
-      ).catch(() => {});
+        { betas: ['files-api-2025-04-14'] }
+      ).catch(e => console.error('Delete error:', e.message));
     }
 
+    report.cellsScanned = cellsScanned;
+    const reportHtml = generateReportHtml(report);
+
+    return res.status(200).json({
+      reportHtml,
+      reportId: crypto.randomUUID(),
+      modelType: report.modelType || null,
+      sector: report.sector || null,
+      geography: report.geography || null,
+      verdict: report.verdict || null,
+      summary: report.summary || {},
+      keyMetrics: report.keyMetrics || {},
+      findings: (report.findings || []).map(f => ({
+        id: f.id, status: f.status, impact: f.impact,
+        description: f.description || '', irrImpact: f.irrImpact || null, fix: f.fix || '',
+      })),
+      modelProfile: { fileName },
+    });
+
   } catch (err) {
-    console.error('Analysis error:', err.message);
+    console.error('Analysis error:', err.message, err.stack);
     return res.status(500).json({ error: 'Analysis failed', detail: err.message });
   }
 }
@@ -270,7 +297,7 @@ function generateReportHtml(report) {
 
   const findingHtml = (f) => {
     const cellsHtml = f.cells && f.cells.length > 0
-      ? `<div style="display:flex;flex-direction:column;gap:5px;margin-bottom:12px">${f.cells.slice(0, 5).map(c => `
+      ? `<div style="display:flex;flex-direction:column;gap:5px;margin-bottom:12px">${f.cells.slice(0, 8).map(c => `
         <div style="display:flex;gap:10px;padding:5px 10px;background:#f5f4ef;border-radius:6px;font-size:12px">
           <span style="font-family:monospace;color:#7a5200;min-width:80px;flex-shrink:0">${c.ref}</span>
           <span style="color:#5a5a56">${c.note}</span>
