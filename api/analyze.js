@@ -194,7 +194,7 @@ export default async function handler(req, res) {
             content: [
               {
                 type: 'text',
-                text: 'Please audit the Excel financial model in the uploaded file. Use Python with pandas/openpyxl to read all sheets directly. Follow all instructions in your system prompt. Return your analysis as a single valid JSON object.',
+                text: 'Use Python to open the uploaded Excel file with openpyxl or pandas. List all sheet names. Return ONLY this JSON: {"sheets": ["sheet1", "sheet2"], "status": "ok"}. Nothing else.',
               },
               {
                 type: 'container_upload',
