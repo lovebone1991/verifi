@@ -4,13 +4,7 @@
       "maxDuration": 300
     }
   },
-  "routes": [
-    {
-      "src": "/api/analyze",
-      "dest": "/api/analyze",
-      "headers": {
-        "x-vercel-max-request-body": "52428800"
-      }
-    }
+  "rewrites": [
+    { "source": "/report", "destination": "/report.html" }
   ]
 }
