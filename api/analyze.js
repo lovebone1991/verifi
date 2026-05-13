@@ -228,6 +228,23 @@ Be efficient — you have limited time. Prioritise Steps 1-3 in order. If runnin
 
       console.log('Analysis complete. Stop reason:', response.stop_reason);
 
+      // Log every content block to understand what Claude did
+      for (const block of response.content || []) {
+        if (block.type === 'text') {
+          console.log('TEXT block length:', block.text.length);
+        } else if (block.type === 'server_tool_use') {
+          console.log('TOOL USE:', block.name, 'input keys:', Object.keys(block.input || {}).join(','));
+          if (block.input?.command) console.log('  command:', String(block.input.command).substring(0, 200));
+        } else if (block.type === 'bash_code_execution_tool_result') {
+          const result = block.content;
+          if (result?.stdout) console.log('  stdout length:', result.stdout.length, 'preview:', String(result.stdout).substring(0, 200));
+          if (result?.stderr) console.log('  stderr:', String(result.stderr).substring(0, 200));
+          if (result?.return_code !== undefined) console.log('  return_code:', result.return_code);
+        } else {
+          console.log('OTHER block type:', block.type);
+        }
+      }
+
       // Extract text from response
       const text = (response.content || [])
         .filter(b => b.type === 'text')
