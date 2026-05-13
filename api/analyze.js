@@ -194,7 +194,28 @@ export default async function handler(req, res) {
             content: [
               {
                 type: 'text',
-                text: 'Use Python to open the uploaded Excel file with openpyxl or pandas. List all sheet names. Return ONLY this JSON: {"sheets": ["sheet1", "sheet2"], "status": "ok"}. Nothing else.',
+                text: `You have been given an Excel financial model. Follow these steps IN ORDER — be efficient, do not read unnecessary data:
+
+STEP 1 — Orient (do this first, fast):
+- List all sheet names
+- For each sheet, get dimensions (rows x cols)
+- Identify: which sheets are cashflow/IRR/debt/inputs/summary based on names
+- Read Inputs sheet fully to find: geography (address/suburb/state), model date/version, key assumptions
+
+STEP 2 — Read key financial data (targeted, not full scan):
+- From the sheet with IRR: find rows containing 'IRR', 'unlevered', 'levered' — read those rows fully
+- From cashflow sheet: find rows with 'drawdown', 'repayment', 'interest', 'NOI', 'revenue' — read those rows fully (all columns)
+- From debt/financing sheet: find rows with 'debt', 'facility', 'drawdown', 'repayment', 'interest' — read all columns for those rows
+
+STEP 3 — Verify calculations:
+- Sum all drawdown values across all periods — sum all repayment values — are they equal? Report exact gap.
+- Calculate WACD: sum all interest expense / sum of average outstanding debt each period
+- Check if any cells contain #REF!, #DIV/0!, #NAME? error strings — count by sheet
+- Find hardcoded large numbers (>10000) that appear in formula cells
+
+STEP 4 — Output JSON following the schema in your system prompt exactly.
+
+Be efficient — you have limited time. Prioritise Steps 1-3 in order. If running low on time, complete what you have and output the JSON.`,
               },
               {
                 type: 'container_upload',
