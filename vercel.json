@@ -3,5 +3,14 @@
     "api/analyze.js": {
       "maxDuration": 300
     }
-  }
+  },
+  "routes": [
+    {
+      "src": "/api/analyze",
+      "dest": "/api/analyze",
+      "headers": {
+        "x-vercel-max-request-body": "52428800"
+      }
+    }
+  ]
 }
