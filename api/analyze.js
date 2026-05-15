@@ -1,14 +1,65 @@
 import Anthropic from '@anthropic-ai/sdk';
 import crypto from 'crypto';
-import { spawnSync } from 'child_process';
-import { writeFileSync, unlinkSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
+import * as XLSX from 'xlsx';
 
 export const config = {
   maxDuration: 300,
   api: { bodyParser: false, responseLimit: false },
 };
+
+// ── Excel Extractor (replaces spawnSync extract-text) ─────────────────────────
+function extractExcelText(fileBuffer) {
+  try {
+    const workbook = XLSX.read(fileBuffer, {
+      type: 'buffer',
+      cellFormula: false,   // don't parse formulas (faster)
+      cellHTML: false,
+      cellText: true,       // get display text
+      sheetStubs: true,     // include empty cells
+      WTF: false,           // don't throw on parse errors
+    });
+
+    const lines = [];
+
+    for (const sheetName of workbook.SheetNames) {
+      lines.push(`## Sheet: ${sheetName}`);
+      const sheet = workbook.Sheets[sheetName];
+      if (!sheet) continue;
+
+      const range = sheet['!ref'];
+      if (!range) continue;
+
+      const decoded = XLSX.utils.decode_range(range);
+      const maxRow = Math.min(decoded.e.r, 2000); // cap at 2000 rows per sheet
+      const maxCol = Math.min(decoded.e.c, 50);   // cap at 50 cols per sheet
+
+      for (let R = decoded.s.r; R <= maxRow; R++) {
+        const rowVals = [];
+        for (let C = decoded.s.c; C <= maxCol; C++) {
+          const cellAddr = XLSX.utils.encode_cell({ r: R, c: C });
+          const cell = sheet[cellAddr];
+          if (!cell) { rowVals.push(''); continue; }
+
+          // Capture error values explicitly
+          if (cell.t === 'e') {
+            const errMap = { 0: '#NULL!', 7: '#DIV/0!', 15: '#VALUE!', 23: '#REF!', 29: '#NAME?', 36: '#NUM!', 42: '#N/A!' };
+            rowVals.push(errMap[cell.v] || '#ERR!');
+          } else {
+            rowVals.push(cell.w || cell.v || '');
+          }
+        }
+        const rowStr = rowVals.join('\t').trim();
+        if (rowStr) lines.push(rowStr);
+      }
+
+      lines.push(''); // blank line between sheets
+    }
+
+    return lines.join('\n');
+  } catch (err) {
+    throw new Error(`Excel parse failed: ${err.message}`);
+  }
+}
 
 // ── RE Knowledge Base ─────────────────────────────────────────────────────────
 const RE_KNOWLEDGE = {
@@ -400,21 +451,15 @@ export default async function handler(req, res) {
       });
     }
 
-    // Write to temp file
-    const ext = filename.split('.').pop().toLowerCase();
-    const tmpPath = join(tmpdir(), `verifi_${fileHash}.${ext}`);
-    writeFileSync(tmpPath, fileBuffer);
+    // Extract text using xlsx package (no external CLI needed)
+    let modelText;
+    try {
+      modelText = extractExcelText(fileBuffer);
+    } catch (parseErr) {
+      return res.status(400).json({ error: `Could not parse Excel file: ${parseErr.message}` });
+    }
 
-    // Extract text
-    const format = ['xlsm', 'xls', 'xlsb'].includes(ext) ? 'xlsx' : ext;
-    const extracted = spawnSync('extract-text', ['--format', format, tmpPath], {
-      timeout: 60000, maxBuffer: 50 * 1024 * 1024
-    });
-
-    try { unlinkSync(tmpPath); } catch {}
-
-    const modelText = extracted.stdout?.toString() || '';
-    if (modelText.length < 100) {
+    if (!modelText || modelText.length < 100) {
       return res.status(400).json({ error: 'Could not extract content from file. Ensure it is a valid Excel file.' });
     }
 
