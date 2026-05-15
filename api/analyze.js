@@ -360,24 +360,30 @@ export default async function handler(req, res) {
     const headerStr = buffer.slice(0, 500).toString();
     const filename = headerStr.match(/filename="(.+?)"/)?.[1] || 'model.xlsx';
 
-    // Find file bytes in multipart
+    // Find file bytes in multipart - robust version
     const boundaryBuf = Buffer.from(`--${boundary}`);
-    let fileStart = -1, fileEnd = -1;
-
-    for (let i = 0; i < buffer.length; i++) {
-      if (buffer[i] === boundaryBuf[0] && buffer.slice(i, i + boundaryBuf.length).equals(boundaryBuf)) {
-        if (fileStart === -1) {
-          const headerEnd = buffer.indexOf('\r\n\r\n', i);
-          if (headerEnd !== -1) fileStart = headerEnd + 4;
-        } else {
-          fileEnd = i - 2;
-          break;
-        }
+    const positions = [];
+    for (let i = 0; i <= buffer.length - boundaryBuf.length; i++) {
+      if (buffer.slice(i, i + boundaryBuf.length).equals(boundaryBuf)) {
+        positions.push(i);
+        i += boundaryBuf.length - 1;
       }
     }
 
-    if (fileStart === -1 || fileEnd === -1 || fileEnd <= fileStart) {
-      return res.status(400).json({ error: 'Could not parse file from request' });
+    if (positions.length < 2) {
+      return res.status(400).json({ error: `Multipart parse failed: found ${positions.length} boundaries` });
+    }
+
+    const headerEnd = buffer.indexOf(Buffer.from('\r\n\r\n'), positions[0]);
+    if (headerEnd === -1) {
+      return res.status(400).json({ error: 'Could not find multipart header end' });
+    }
+
+    const fileStart = headerEnd + 4;
+    const fileEnd = positions[1] - 2;
+
+    if (fileEnd <= fileStart) {
+      return res.status(400).json({ error: 'Empty file in multipart' });
     }
 
     const fileBuffer = buffer.slice(fileStart, fileEnd);
