@@ -1,347 +1,445 @@
 import Anthropic from '@anthropic-ai/sdk';
+import crypto from 'crypto';
+import { spawnSync } from 'child_process';
+import { writeFileSync, unlinkSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
 
 export const config = {
   maxDuration: 300,
-  api: {
-    bodyParser: false,
-    responseLimit: false,
-  },
+  api: { bodyParser: false, responseLimit: false },
 };
 
-const SYSTEM_PROMPT = `You are Verifi, a financial model verification engine built by a CFA-qualified real estate investment professional with 15+ years experience reviewing residential development, commercial RE, industrial, BTR, PBSA, debt, and fund of funds models.
+// ── RE Knowledge Base ─────────────────────────────────────────────────────────
+const RE_KNOWLEDGE = {
+  universal: `UNIVERSAL CASH FLOW CHAIN:
+Gross Revenue → -Vacancy → Gross Effective Income → -Outgoings → NOI
+→ -CapEx -Leasing → AFFO → ±Investment CFs → Unlevered IRR
+→ +Debt CFs → Net Levered CF → -Tax → -Fund Fees → Net IRR to Investor
 
-CORE PHILOSOPHY:
-Think like a seasoned fund manager reviewing this model. You have full access to the Excel file via code execution. Use Python iteratively — explore, discover, verify. Do not stop until you have thoroughly analysed the model.
+SENSE CHECK MATRIX:
+NOI Margin 75-90% (red <70%), ICR >1.5x (red <1.2x), LVR 40-60% (red >65%)
+LTC Dev 55-70% (red >75%), E-IRR/Unlev ratio 1.3-2.0x (red >2.5x)
+TER <1.5% (red >2%), Distribution Yield 3-6% (red <2% or >8%)
+WACD = Σ(Interest_t)/Σ(Avg_Debt_t) — always derive from debt schedule
+Unlev IRR ≈ Entry Yield + g (cap rate flat, long hold)`,
 
-ANALYSIS APPROACH:
-1. Start by loading the file and listing all sheets with dimensions
-2. Read the Inputs sheet fully — find geography, key assumptions, model date
-3. Identify cashflow, IRR, and debt sheets by name
-4. For each key sheet: find rows containing financial keywords, read those rows completely
-5. Verify accounting identities: debt drawdown = repayment, sources = uses
-6. Calculate WACD from the debt schedule
-7. Check ICR every period
-8. Count #REF! errors by sheet — use data_only=False to see formula errors
-9. Identify hardcoded values that affect key outputs
-10. Only stop when you have enough data to produce a thorough report
+  core_hold: `CORE HOLD: 4 yields: Passing/Reversionary/Equivalent/Market
+Under-rented: Passing < Reversionary. Over-rented: Passing > Reversionary
+Equivalent always between Passing and Reversionary
+Multi-tranche debt: each of Acquisition/Refi/Capex must independently close (drawdown=repayment)`,
 
-TECHNICAL NOTES:
-- Use openpyxl with data_only=True to read calculated values
-- Use openpyxl with data_only=False to see formulas and detect #REF! errors
-- Use pandas for summing time series (drawdown totals, repayment totals, interest totals)
-- The file is available in your sandbox — find it with: import os; os.listdir('.')
-- Geography is in the Inputs sheet — scan for address/suburb/state/postcode keywords
+  development: `DEVELOPMENT: GDV = Stabilised NOI/Exit Cap Rate or Area×$/sqm
+RLV = GDV - TDC - Dev Profit. YoC = NOI/TPC (must > Cap Rate)
+PC moment: Value jumps TPC→GDV. Dev Margin residential 15-25%, commercial 8-15%`,
 
-You are an expert in:
-- Universal cash flow chain: Gross Revenue → NOI → AFFO → Net Levered CF → Equity IRR
-- WACD = Σ(Interest_t) / Σ(Average_Debt_t) — derive from debt schedule
-- Leverage: E-IRR = Unlev IRR + (Unlev IRR - WACD) × D/E
-- Model types: Core Hold, Dev-Sell, Dev-Hold-Sell, BTR, PBSA, Fund
-- Four yield concepts: Passing, Reversionary, Equivalent, Market
-- Debt structures: construction loan, term facility, refi, capex facility
+  btr: `BTR: Day 1 100% occupancy = red flag. Ramp: Y1~75%, Y2~85%, Y3~92%
+Income: Total Potential → -Vacancy → -Lease-Up → +Retained → +Relet = Actual`,
 
-When done, output ONLY valid JSON:
-{
-  "modelName": "string",
-  "modelType": "Core Hold | Dev-Sell | Dev-Hold-Sell | BTR | PBSA | Fund | Mixed",
-  "sector": "string",
-  "geography": "string — from Inputs sheet, Unknown if not found",
-  "verdict": "FAIL | WARN | PASS",
-  "summary": { "fail": 0, "warn": 0, "pass": 0, "total": 0 },
-  "findings": [{
-    "id": "S-02",
-    "layer": 1,
-    "status": "FAIL | WARN | PASS",
-    "title": "string",
-    "impact": "HIGH | MEDIUM | LOW | NONE",
-    "description": "string — specific, with actual numbers and cell references",
-    "irrImpact": "string or null",
-    "cells": [{ "ref": "Sheet!Cell", "note": "string", "value": "string" }],
-    "fix": "string"
-  }],
-  "priorities": [{ "rank": 1, "id": "S-02", "action": "string" }],
-  "keyMetrics": {
-    "unleveredIRR": null, "leveredIRR": null, "devMargin": null,
-    "yieldOnCost": null, "capRate": null, "ltc": null, "ltv": null,
-    "icr": null, "wale": null, "passingYield": null, "occupancy": null,
-    "distributionYield": null, "navPerUnit": null, "holdPeriod": null,
-    "revenuePerSqm": null, "wacd": null
-  },
-  "scope": "This report checks structural and mathematical integrity. A clean Verifi report is necessary but not sufficient for a reliable model."
-}
+  pbsa: `PBSA: Income = Beds × Room Rate × Occupancy (NOT sqm-based)
+YoC stabilised vs acquisition cap rate = key spread. Operator fee = % of revenue`,
 
-METRICS FORMAT: clean numbers only e.g. "21.9%", "4.4%", "$187/sqm". No parenthetical text.
-DYNAMIC METRICS: only populate metrics relevant to the model type. Null for all others.`;
+  fund: `FUND: Distributions ≤ Distributable Income each period (critical)
+TER = (Mgmt Fee + Fund Costs)/NAV target <1.5%
+Performance fee hurdle must match waterfall definition exactly`,
 
-function generateReportHtml(report) {
-  const now = new Date().toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
-  const statusColor = { FAIL: '#b83224', WARN: '#7a5200', PASS: '#1a6b3c' };
-  const statusBg = { FAIL: '#fdf0ee', WARN: '#fdf6e3', PASS: '#edf5f0' };
+  jv_waterfall: `JV WATERFALL: XIRR #NUM! during construction = normal (all-negative CFs)
+2.98e-9 ≈ 0 (XIRR floating point precision, not error)
+Co-invest % must be identical across ALL scenario sheets
+Third tier never triggering: verify hurdle is achievable given returns`,
+};
 
-  const findingHtml = (f) => {
-    const cellsHtml = f.cells && f.cells.length > 0
-      ? `<div style="display:flex;flex-direction:column;gap:5px;margin-bottom:12px">${f.cells.slice(0, 8).map(c => `
-        <div style="display:flex;gap:10px;padding:5px 10px;background:#f5f4ef;border-radius:6px;font-size:12px">
-          <span style="font-family:monospace;color:#7a5200;min-width:80px;flex-shrink:0">${c.ref}</span>
-          <span style="color:#5a5a56">${c.note}</span>
-          ${c.value ? `<span style="font-family:monospace;font-size:11px;color:#9a9990;margin-left:auto">${c.value}</span>` : ''}
-        </div>`).join('')}</div>` : '';
-
-    const impactHtml = f.irrImpact && f.status !== 'PASS'
-      ? `<div style="background:${statusBg[f.status]};border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:${statusColor[f.status]};line-height:1.6"><strong>IRR impact:</strong> ${f.irrImpact}</div>` : '';
-
-    return `<div style="background:white;border:1px solid #dddcd4;border-radius:12px;overflow:hidden;margin-bottom:10px">
-      <div style="background:${statusBg[f.status]};padding:10px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #dddcd4">
-        <span style="font-family:monospace;font-size:10px;font-weight:500;color:${statusColor[f.status]}">${f.status}</span>
-        <span style="font-size:13px;font-weight:500;flex:1">${f.id} · ${f.title}</span>
-        ${f.impact !== 'NONE' ? `<span style="font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid #dddcd4;color:#5a5a56;background:white">${f.impact} impact</span>` : ''}
-      </div>
-      <div style="padding:14px 16px">
-        <p style="font-size:13px;color:#5a5a56;line-height:1.7;margin-bottom:10px">${f.description}</p>
-        ${impactHtml}${cellsHtml}
-        ${f.fix ? `<p style="font-size:12px;font-weight:500;color:#0e0e0c;margin-bottom:4px">How to fix</p><p style="font-size:12px;color:#5a5a56;line-height:1.65">${f.fix}</p>` : ''}
-      </div>
-    </div>`;
-  };
-
-  const labels = {
-    unleveredIRR: 'Unlev IRR', leveredIRR: 'E-IRR', devMargin: 'Dev Margin',
-    yieldOnCost: 'Yield on Cost', capRate: 'Cap Rate', ltc: 'LTC', ltv: 'LTV',
-    icr: 'ICR', wale: 'WALE', passingYield: 'Passing Yield', occupancy: 'Occupancy',
-    distributionYield: 'Distribution Yield', navPerUnit: 'NAV / Unit',
-    holdPeriod: 'Hold Period', revenuePerSqm: 'Revenue / sqm', wacd: 'WACD',
-  };
-
-  const metricsHtml = report.keyMetrics
-    ? Object.entries(report.keyMetrics).filter(([, v]) => v && v !== 'null').map(([k, v]) =>
-        `<div style="background:#f5f4ef;border-radius:8px;padding:10px 12px;text-align:center">
-          <div style="font-size:11px;color:#9a9990;margin-bottom:3px">${labels[k] || k}</div>
-          <div style="font-size:15px;font-weight:500">${v}</div>
-        </div>`).join('') : '';
-
-  const prioritiesHtml = (report.priorities || []).map(p => {
-    const f = (report.findings || []).find(x => x.id === p.id);
-    const color = f?.status === 'FAIL' ? '#b83224' : '#7a5200';
-    return `<div style="display:flex;gap:10px;align-items:flex-start;font-size:12px">
-      <span style="font-family:monospace;font-weight:500;color:${color};min-width:16px">${p.rank}</span>
-      <span style="color:#5a5a56;line-height:1.6">${p.action}</span>
-    </div>`;
-  }).join('');
-
-  const verdictColor = statusColor[report.verdict] || '#0e0e0c';
-  const failFindings = (report.findings || []).filter(f => f.status !== 'PASS');
-  const passFindings = (report.findings || []).filter(f => f.status === 'PASS');
-
-  return `
-    <div style="margin-bottom:28px">
-      <p style="font-size:12px;color:#9a9990;margin-bottom:4px">Verifi Audit Report · ${now}</p>
-      <h1 style="font-size:20px;font-weight:400;margin-bottom:4px">${report.modelName || 'Financial Model'}</h1>
-      <p style="font-size:13px;color:#5a5a56">${report.sector || ''} · ${report.geography || ''} · ${report.modelType || ''} · Verdict: <strong style="color:${verdictColor}">${report.verdict}</strong></p>
-    </div>
-    ${metricsHtml ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin-bottom:24px">${metricsHtml}</div>` : ''}
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:24px">
-      <div style="background:#f5f4ef;border-radius:8px;padding:12px;text-align:center">
-        <div style="font-size:11px;color:#9a9990;margin-bottom:3px">cells scanned</div>
-        <div style="font-size:18px;font-weight:500">${report.cellsScanned ? report.cellsScanned.toLocaleString() : '—'}</div>
-      </div>
-      <div style="background:#f5f4ef;border-radius:8px;padding:12px;text-align:center">
-        <div style="font-size:11px;color:#9a9990;margin-bottom:3px">issues found</div>
-        <div style="font-size:18px;font-weight:500">${(report.summary?.fail || 0) + (report.summary?.warn || 0)}</div>
-      </div>
-      <div style="background:#fdf0ee;border-radius:8px;padding:12px;text-align:center">
-        <div style="font-size:11px;color:#b83224;margin-bottom:3px">FAIL</div>
-        <div style="font-size:18px;font-weight:500;color:#b83224">${report.summary?.fail || 0}</div>
-      </div>
-      <div style="background:#fdf6e3;border-radius:8px;padding:12px;text-align:center">
-        <div style="font-size:11px;color:#7a5200;margin-bottom:3px">WARN</div>
-        <div style="font-size:18px;font-weight:500;color:#7a5200">${report.summary?.warn || 0}</div>
-      </div>
-    </div>
-    ${prioritiesHtml ? `<div style="background:white;border:1px solid #dddcd4;border-radius:12px;padding:18px 20px;margin-bottom:20px">
-      <p style="font-size:12px;font-weight:500;margin-bottom:12px">Priority action list</p>
-      <div style="display:flex;flex-direction:column;gap:8px">${prioritiesHtml}</div>
-    </div>` : ''}
-    ${failFindings.map(findingHtml).join('')}
-    ${passFindings.map(findingHtml).join('')}
-    <p style="font-size:11px;color:#9a9990;line-height:1.7;font-style:italic;border-top:1px solid #dddcd4;padding-top:16px;margin-bottom:20px">${report.scope}</p>
-    <div style="background:white;border:1px solid #dddcd4;border-radius:12px;padding:20px;text-align:center;margin-bottom:20px">
-      <p style="font-size:13px;color:#5a5a56;margin-bottom:14px">Found something we missed? Your feedback improves Verifi.</p>
-      <a href="mailto:hello@verifi.com.au?subject=Verifi Feedback" style="display:inline-block;padding:8px 20px;border:1px solid #dddcd4;border-radius:8px;font-size:13px;color:#0e0e0c;text-decoration:none">Send feedback</a>
-    </div>`;
-}
-
-function parseMultipart(buffer, boundary) {
-  const parts = [];
-  const boundaryBuffer = Buffer.from('--' + boundary);
-  let start = 0;
-  while (start < buffer.length) {
-    const boundaryIndex = buffer.indexOf(boundaryBuffer, start);
-    if (boundaryIndex === -1) break;
-    const headerStart = boundaryIndex + boundaryBuffer.length + 2;
-    const headerEnd = buffer.indexOf(Buffer.from('\r\n\r\n'), headerStart);
-    if (headerEnd === -1) break;
-    const headers = buffer.slice(headerStart, headerEnd).toString();
-    const dataStart = headerEnd + 4;
-    const nextBoundary = buffer.indexOf(boundaryBuffer, dataStart);
-    const dataEnd = nextBoundary === -1 ? buffer.length : nextBoundary - 2;
-    const nameMatch = headers.match(/name="([^"]+)"/);
-    const filenameMatch = headers.match(/filename="([^"]+)"/);
-    if (nameMatch) {
-      parts.push({ name: nameMatch[1], filename: filenameMatch ? filenameMatch[1] : null, data: buffer.slice(dataStart, dataEnd) });
+// ── Tools ─────────────────────────────────────────────────────────────────────
+const TOOLS = [
+  {
+    name: "search_errors",
+    description: "Search for formula errors (#REF!, #DIV/0!, #N/A, #VALUE!, #NAME?, #NUM!) in the model",
+    input_schema: {
+      type: "object",
+      properties: {
+        error_type: { type: "string", description: "Error type or ALL" },
+        sheet_name: { type: "string", description: "Optional: specific sheet" }
+      },
+      required: ["error_type"]
     }
-    start = nextBoundary === -1 ? buffer.length : nextBoundary;
+  },
+  {
+    name: "get_section",
+    description: "Get content from a specific sheet around a keyword",
+    input_schema: {
+      type: "object",
+      properties: {
+        sheet_name: { type: "string" },
+        keyword: { type: "string" },
+        context_lines: { type: "number" }
+      },
+      required: ["sheet_name", "keyword"]
+    }
+  },
+  {
+    name: "scan_sheet",
+    description: "Scan a sheet for a pattern, or list all content if no pattern given",
+    input_schema: {
+      type: "object",
+      properties: {
+        sheet_name: { type: "string" },
+        pattern: { type: "string" }
+      },
+      required: ["sheet_name"]
+    }
+  },
+  {
+    name: "check_metric",
+    description: "Check a metric value against RE benchmarks",
+    input_schema: {
+      type: "object",
+      properties: {
+        metric_name: { type: "string", description: "NOI_Margin|ICR|LVR|LTC|Dev_Margin_Residential|Dev_Margin_Commercial|TER|Distribution_Yield|IRR_Leverage_Ratio" },
+        value: { type: "number" },
+        context: { type: "string" }
+      },
+      required: ["metric_name", "value"]
+    }
+  },
+  {
+    name: "finish_analysis",
+    description: "Output the final structured audit report. Call when analysis is complete.",
+    input_schema: {
+      type: "object",
+      properties: {
+        report: {
+          type: "object",
+          properties: {
+            modelName: { type: "string" },
+            modelType: { type: "string" },
+            sector: { type: "string" },
+            geography: { type: "string" },
+            verdict: { type: "string" },
+            summary: { type: "object" },
+            findings: { type: "array" },
+            priorities: { type: "array" },
+            keyMetrics: { type: "object" },
+            scope: { type: "string" }
+          },
+          required: ["modelName", "modelType", "verdict", "findings", "keyMetrics"]
+        }
+      },
+      required: ["report"]
+    }
   }
-  return parts;
+];
+
+// ── Tool Executor ─────────────────────────────────────────────────────────────
+function executeTool(name, input, modelText) {
+  const lines = modelText.split('\n');
+
+  if (name === 'search_errors') {
+    const { error_type, sheet_name } = input;
+    const errors = error_type === 'ALL'
+      ? ['#REF!', '#DIV/0!', '#N/A', '#VALUE!', '#NAME?', '#NUM!']
+      : [error_type];
+
+    let currentSheet = '';
+    const results = [];
+
+    for (const line of lines) {
+      if (line.startsWith('## Sheet:')) { currentSheet = line.replace('## Sheet:', '').trim(); continue; }
+      if (sheet_name && currentSheet !== sheet_name) continue;
+      for (const err of errors) {
+        if (line.includes(err)) {
+          const count = (line.match(new RegExp(err.replace(/[!/?]/g, '\\$&'), 'g')) || []).length;
+          results.push(`[${currentSheet}] ${line.trim().slice(0, 120)} (${count}× ${err})`);
+          break;
+        }
+      }
+    }
+
+    if (!results.length) return `No ${error_type} errors found${sheet_name ? ` in ${sheet_name}` : ''}.`;
+    return `${results.length} lines with errors:\n${results.slice(0, 25).join('\n')}${results.length > 25 ? `\n...+${results.length - 25} more` : ''}`;
+  }
+
+  if (name === 'get_section') {
+    const { sheet_name, keyword, context_lines = 10 } = input;
+    let inSheet = false;
+    const sheetLines = [];
+
+    for (const line of lines) {
+      if (line.startsWith('## Sheet:')) { inSheet = line.includes(sheet_name); continue; }
+      if (inSheet) sheetLines.push(line);
+    }
+
+    if (!sheetLines.length) {
+      const available = [...modelText.matchAll(/## Sheet: (.+)/g)].map(m => m[1]).join(', ');
+      return `Sheet '${sheet_name}' not found. Available: ${available}`;
+    }
+
+    const idx = sheetLines.findIndex(l => l.toLowerCase().includes(keyword.toLowerCase()));
+    if (idx === -1) return `'${keyword}' not found in ${sheet_name}. Sample:\n${sheetLines.slice(0, 15).join('\n')}`;
+
+    const start = Math.max(0, idx - 3);
+    return `'${keyword}' in ${sheet_name} (line ${idx}):\n${sheetLines.slice(start, idx + context_lines).join('\n')}`;
+  }
+
+  if (name === 'scan_sheet') {
+    const { sheet_name, pattern } = input;
+    let inSheet = false;
+    const results = [];
+
+    for (const line of lines) {
+      if (line.startsWith('## Sheet:')) { inSheet = line.includes(sheet_name); continue; }
+      if (!inSheet) continue;
+      if (!pattern || line.toLowerCase().includes(pattern.toLowerCase())) {
+        if (line.trim()) results.push(line.trim().slice(0, 150));
+      }
+    }
+
+    if (!results.length) return `Nothing found in '${sheet_name}'${pattern ? ` matching '${pattern}'` : ''}.`;
+    return `${sheet_name}${pattern ? ` ('${pattern}')` : ''}: ${results.length} lines\n${results.slice(0, 35).join('\n')}`;
+  }
+
+  if (name === 'check_metric') {
+    const { metric_name, value, context = '' } = input;
+    const benchmarks = {
+      NOI_Margin:               { normal: [0.75, 0.90], redBelow: 0.70, unit: '%', x100: true },
+      ICR:                      { normal: [1.5, null],  redBelow: 1.2,  unit: 'x' },
+      LVR:                      { normal: [0.40, 0.60], redAbove: 0.65, unit: '%', x100: true },
+      LTC:                      { normal: [0.55, 0.70], redAbove: 0.75, unit: '%', x100: true },
+      Dev_Margin_Residential:   { normal: [0.15, 0.25], redBelow: 0.10, unit: '%', x100: true },
+      Dev_Margin_Commercial:    { normal: [0.08, 0.15], redBelow: 0.05, unit: '%', x100: true },
+      TER:                      { normal: [null, 0.015],redAbove: 0.02, unit: '%', x100: true },
+      Distribution_Yield:       { normal: [0.03, 0.06], redBelow: 0.02, redAbove: 0.08, unit: '%', x100: true },
+      IRR_Leverage_Ratio:       { normal: [1.3, 2.0],  redAbove: 2.5,  unit: 'x' },
+    };
+
+    const b = benchmarks[metric_name];
+    if (!b) return `No benchmark for '${metric_name}'. Value: ${value}`;
+
+    const fmt = v => b.x100 ? (v * 100).toFixed(1) + b.unit : v.toFixed(2) + b.unit;
+    let flag = '';
+    if (b.redBelow !== undefined && value < b.redBelow) flag = `RED FLAG: below ${fmt(b.redBelow)}`;
+    if (b.redAbove !== undefined && value > b.redAbove) flag = `RED FLAG: above ${fmt(b.redAbove)}`;
+
+    const range = b.normal.filter(Boolean).map(fmt).join('–');
+    return `${metric_name}: ${fmt(value)} — ${flag || 'NORMAL'}. Benchmark: ${range}${context ? '. ' + context : ''}`;
+  }
+
+  return `Unknown tool: ${name}`;
 }
 
+// ── Agentic Loop ──────────────────────────────────────────────────────────────
+async function runAgenticLoop(client, modelText, modelType) {
+  const messages = [];
+  const toolsUsed = [];
+  const toolCallCount = {};
+  let inputTokens = 0, outputTokens = 0, cachedTokens = 0;
+  let rounds = 0;
+
+  const knowledgeKey = {
+    'Core Hold': 'core_hold', 'Dev-Sell': 'development',
+    'Dev-Hold-Sell': 'development', 'BTR': 'btr', 'PBSA': 'pbsa',
+    'Fund': 'fund', 'JV-Waterfall': 'jv_waterfall',
+  }[modelType] || '';
+
+  const knowledge = RE_KNOWLEDGE.universal + (knowledgeKey ? '\n\n' + RE_KNOWLEDGE[knowledgeKey] : '');
+
+  messages.push({
+    role: "user",
+    content: [{
+      type: "text",
+      text: `Audit this real estate financial model. Use tools systematically, then call finish_analysis.\n\nRE KNOWLEDGE:\n${knowledge}\n\nMODEL CONTENT:\n${modelText.slice(0, 160000)}`,
+      cache_control: { type: "ephemeral" }
+    }]
+  });
+
+  const systemPrompt = [{
+    type: "text",
+    text: `You are Verifi, an automated RE financial model audit engine built by a CFA-qualified analyst with 15+ years institutional experience.
+
+Analyse like a senior fund manager. Use tools to:
+1. search_errors — find structural issues first
+2. get_section / scan_sheet — investigate specific areas
+3. check_metric — benchmark values
+4. finish_analysis — when you have complete findings (typically 6-12 tool calls)
+
+In finish_analysis findings, include: specific cell references, actual numbers, IRR impact, concrete fix.
+Flag: IFERROR-wrapped errors (silent failures), hardcoded values affecting IRR/NOI, exit cap rate assumptions, debt drawdown≠repayment.`,
+    cache_control: { type: "ephemeral" }
+  }];
+
+  while (rounds < 15) {
+    rounds++;
+
+    const res = await client.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 4000,
+      system: systemPrompt,
+      tools: TOOLS,
+      messages,
+    });
+
+    const usage = res.usage || {};
+    inputTokens += usage.input_tokens || 0;
+    outputTokens += usage.output_tokens || 0;
+    cachedTokens += usage.cache_read_input_tokens || 0;
+
+    messages.push({ role: "assistant", content: res.content });
+
+    if (res.stop_reason === 'end_turn') break;
+
+    if (res.stop_reason === 'tool_use') {
+      const toolResults = [];
+
+      for (const block of res.content) {
+        if (block.type !== 'tool_use') continue;
+
+        toolsUsed.push(block.name);
+        toolCallCount[block.name] = (toolCallCount[block.name] || 0) + 1;
+
+        if (block.name === 'finish_analysis') {
+          const report = block.input.report;
+          report.metrics = {
+            rounds,
+            inputTokens,
+            outputTokens,
+            cachedTokens,
+            cacheHitRate: cachedTokens > 0 ? `${((cachedTokens / (inputTokens + cachedTokens)) * 100).toFixed(0)}%` : '0%',
+            toolCallCount,
+            toolsUsed,
+            estimatedCostUSD: ((inputTokens * 3 + outputTokens * 15 + cachedTokens * 0.3) / 1_000_000).toFixed(4)
+          };
+          return report;
+        }
+
+        const result = executeTool(block.name, block.input, modelText);
+        toolResults.push({ type: "tool_result", tool_use_id: block.id, content: result });
+      }
+
+      if (toolResults.length) messages.push({ role: "user", content: toolResults });
+    }
+  }
+
+  // Fallback
+  return {
+    modelName: "Unknown", modelType, sector: "Unknown", geography: "Unknown",
+    verdict: "WARN",
+    summary: { fail: 0, warn: 1, pass: 0, total: 1 },
+    findings: [{ id: "SYS-01", layer: 0, status: "WARN", title: "Analysis incomplete",
+      impact: "MEDIUM", description: `Reached ${rounds} rounds without completing.`,
+      irrImpact: null, cells: [], fix: "Review manually" }],
+    priorities: [], keyMetrics: {},
+    metrics: { rounds, inputTokens, outputTokens, cachedTokens, toolCallCount, toolsUsed,
+      estimatedCostUSD: ((inputTokens * 3 + outputTokens * 15) / 1_000_000).toFixed(4) }
+  };
+}
+
+// ── Result Cache (in-memory) ──────────────────────────────────────────────────
+const resultCache = new Map();
+
+// ── Main Handler ──────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const startTime = Date.now();
 
   try {
+    // Read raw body
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
     const buffer = Buffer.concat(chunks);
 
-    const contentType = req.headers['content-type'] || '';
-    const boundary = contentType.split('boundary=')[1];
-    if (!boundary) return res.status(400).json({ error: 'No boundary' });
+    // Parse multipart
+    const boundary = req.headers['content-type']?.match(/boundary=(.+)/)?.[1];
+    if (!boundary) return res.status(400).json({ error: 'Invalid multipart request' });
 
-    const parts = parseMultipart(buffer, boundary);
-    const filePart = parts.find(p => p.name === 'file');
-    const cellsScannedPart = parts.find(p => p.name === 'cellsScanned');
-    if (!filePart) return res.status(400).json({ error: 'No file' });
+    // Extract filename
+    const headerStr = buffer.slice(0, 500).toString();
+    const filename = headerStr.match(/filename="(.+?)"/)?.[1] || 'model.xlsx';
 
-    const fileBytes = filePart.data;
-    const fileName = filePart.filename || 'model.xlsx';
-    const cellsScanned = cellsScannedPart ? parseInt(cellsScannedPart.data.toString()) : null;
+    // Find file bytes in multipart
+    const boundaryBuf = Buffer.from(`--${boundary}`);
+    let fileStart = -1, fileEnd = -1;
 
-    // Upload file to Anthropic
-    console.log('Uploading:', fileName, fileBytes.length, 'bytes');
-    const fileBlob = new Blob([fileBytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const uploadedFile = await client.beta.files.upload(
-      { file: new File([fileBlob], fileName, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }) },
-      { betas: ['files-api-2025-04-14'] }
-    );
-    const fileId = uploadedFile.id;
-    console.log('File ID:', fileId);
-
-    let report = null;
-    let containerId = null;
-
-    try {
-      // Agentic loop — Claude iterates freely until done
-      const messages = [{
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: 'Analyse this Excel financial model thoroughly. Use code execution to explore the file iteratively. Take as many steps as you need. When you have completed your analysis, output the JSON report.',
-          },
-          { type: 'container_upload', file_id: fileId },
-        ],
-      }];
-
-      const MAX_ITERATIONS = 15;
-      let iterations = 0;
-
-      while (iterations < MAX_ITERATIONS) {
-        iterations++;
-        console.log(`Iteration ${iterations}...`);
-
-        const requestBody = {
-          model: 'claude-sonnet-4-6',
-          max_tokens: 8000,
-          betas: ['files-api-2025-04-14'],
-          system: [{
-            type: 'text',
-            text: SYSTEM_PROMPT,
-            cache_control: { type: 'ephemeral' },
-          }],
-          tools: [{ type: 'code_execution_20250825', name: 'code_execution' }],
-          messages,
-        };
-
-        // Reuse container after first iteration
-        if (containerId) requestBody.container = containerId;
-
-        const response = await client.beta.messages.create(requestBody);
-
-        // Save container ID for reuse
-        if (response.container?.id && !containerId) {
-          containerId = response.container.id;
-          console.log('Container ID:', containerId);
-        }
-
-        console.log(`Iteration ${iterations} stop_reason:`, response.stop_reason);
-
-        // Add assistant response to message history
-        messages.push({ role: 'assistant', content: response.content });
-
-        // Check if Claude is done
-        if (response.stop_reason === 'end_turn') {
-          // Extract JSON from final response
-          const text = (response.content || [])
-            .filter(b => b.type === 'text')
-            .map(b => b.text)
-            .join('');
-
-          const jsonMatch = text.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            report = JSON.parse(jsonMatch[0]);
-            console.log('Report extracted after', iterations, 'iterations');
-            break;
-          }
-          // Claude said end_turn but no JSON yet — ask for it
-          messages.push({
-            role: 'user',
-            content: 'Please now output your complete findings as a single valid JSON object following the schema in your instructions.',
-          });
-        } else if (response.stop_reason === 'tool_use') {
-          // Claude wants to run more code — continue loop
-          // Tool results are already in response.content, add user turn to continue
-          const toolResults = (response.content || [])
-            .filter(b => b.type === 'tool_use')
-            .map(b => ({ type: 'tool_result', tool_use_id: b.id, content: '' }));
-
-          if (toolResults.length > 0) {
-            messages.push({ role: 'user', content: toolResults });
-          }
+    for (let i = 0; i < buffer.length; i++) {
+      if (buffer[i] === boundaryBuf[0] && buffer.slice(i, i + boundaryBuf.length).equals(boundaryBuf)) {
+        if (fileStart === -1) {
+          const headerEnd = buffer.indexOf('\r\n\r\n', i);
+          if (headerEnd !== -1) fileStart = headerEnd + 4;
         } else {
-          // Unexpected stop reason
-          console.log('Unexpected stop_reason:', response.stop_reason);
+          fileEnd = i - 2;
           break;
         }
       }
-
-    } finally {
-      await client.beta.files.delete(fileId, { betas: ['files-api-2025-04-14'] }).catch(() => {});
     }
 
-    if (!report) throw new Error('No report generated after ' + MAX_ITERATIONS + ' iterations');
+    if (fileStart === -1 || fileEnd === -1 || fileEnd <= fileStart) {
+      return res.status(400).json({ error: 'Could not parse file from request' });
+    }
 
-    report.cellsScanned = cellsScanned;
-    const reportHtml = generateReportHtml(report);
+    const fileBuffer = buffer.slice(fileStart, fileEnd);
 
-    return res.status(200).json({
-      reportHtml,
-      reportId: crypto.randomUUID(),
-      modelType: report.modelType || null,
-      sector: report.sector || null,
-      geography: report.geography || null,
-      verdict: report.verdict || null,
-      summary: report.summary || {},
-      keyMetrics: report.keyMetrics || {},
-      findings: (report.findings || []).map(f => ({
-        id: f.id, status: f.status, impact: f.impact,
-        description: f.description || '', irrImpact: f.irrImpact || null, fix: f.fix || '',
-      })),
-      modelProfile: { fileName },
+    // Hash for caching
+    const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex').slice(0, 16);
+
+    // Check cache
+    if (resultCache.has(fileHash)) {
+      return res.status(200).json({
+        ...resultCache.get(fileHash),
+        cached: true,
+        analysisTime: `${((Date.now() - startTime) / 1000).toFixed(1)}s (cached)`
+      });
+    }
+
+    // Write to temp file
+    const ext = filename.split('.').pop().toLowerCase();
+    const tmpPath = join(tmpdir(), `verifi_${fileHash}.${ext}`);
+    writeFileSync(tmpPath, fileBuffer);
+
+    // Extract text
+    const format = ['xlsm', 'xls', 'xlsb'].includes(ext) ? 'xlsx' : ext;
+    const extracted = spawnSync('extract-text', ['--format', format, tmpPath], {
+      timeout: 60000, maxBuffer: 50 * 1024 * 1024
+    });
+
+    try { unlinkSync(tmpPath); } catch {}
+
+    const modelText = extracted.stdout?.toString() || '';
+    if (modelText.length < 100) {
+      return res.status(400).json({ error: 'Could not extract content from file. Ensure it is a valid Excel file.' });
+    }
+
+    // Detect model type
+    const sheets = [...modelText.matchAll(/## Sheet: (.+)/g)].map(m => m[1].toLowerCase());
+    const text = modelText.toLowerCase();
+    let modelType = 'Mixed';
+    if (text.includes('build-to-rent') || text.includes(' btr') || sheets.some(s => s.includes('btr'))) modelType = 'BTR';
+    else if (text.includes('beds') && (text.includes('pbsa') || text.includes('student'))) modelType = 'PBSA';
+    else if (sheets.some(s => s.includes('promote') || s.includes('waterfall'))) modelType = 'JV-Waterfall';
+    else if (sheets.some(s => s.includes('fund') || s.includes('portfolio'))) modelType = 'Fund';
+    else if (text.includes('construction cost') || text.includes('development cost')) modelType = 'Dev-Hold-Sell';
+    else if (sheets.some(s => s.includes('tenant') || s.includes('lease'))) modelType = 'Core Hold';
+
+    // Run analysis
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const report = await runAgenticLoop(client, modelText, modelType);
+
+    // Cache result
+    if (resultCache.size >= 50) resultCache.delete(resultCache.keys().next().value);
+    resultCache.set(fileHash, report);
+
+    res.status(200).json({
+      ...report,
+      cached: false,
+      analysisTime: `${((Date.now() - startTime) / 1000).toFixed(1)}s`,
+      fileInfo: { name: filename, hash: fileHash, textLength: modelText.length, sheets: sheets.length }
     });
 
   } catch (err) {
-    console.error('Error:', err.message);
-    return res.status(500).json({ error: 'Analysis failed', detail: err.message });
+    console.error('Verifi error:', err);
+    res.status(500).json({ error: err.message || 'Analysis failed' });
   }
 }
