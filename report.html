@@ -488,11 +488,154 @@
   if (raw) {
     try {
       const data = JSON.parse(raw);
-      if (data.reportHtml) {
-        document.getElementById('emptyState').style.display = 'none';
-        document.getElementById('reportContent').innerHTML = data.reportHtml;
+      const container = document.getElementById('reportContent');
+      document.getElementById('emptyState').style.display = 'none';
 
-        // Build shared context for all feedback submissions
+      // ── Render JSON findings (new agentic loop output) ──────────────────
+      if (data.findings && !data.reportHtml) {
+        const statusColor = { FAIL: '#b83224', WARN: '#7a5200', PASS: '#1a6b3c' };
+        const statusBg = { FAIL: '#fdf0ee', WARN: '#fdf6e3', PASS: '#edf5f0' };
+        const verdict = data.verdict || 'WARN';
+
+        // Header
+        let html = `
+          <div style="background:${statusBg[verdict]};border:1px solid ${statusColor[verdict]}33;border-radius:12px;padding:20px 24px;margin-bottom:24px">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+              <span style="font-size:22px;font-weight:700;color:${statusColor[verdict]}">${verdict}</span>
+              <span style="font-size:14px;color:#5a5a56">${data.modelName || 'Financial Model'} · ${data.modelType || ''} · ${data.sector || ''}</span>
+            </div>
+            <div style="font-size:13px;color:#5a5a56">
+              ${data.geography ? `📍 ${data.geography}` : ''}
+              ${data.analysisTime ? ` &nbsp;·&nbsp; ⏱ ${data.analysisTime}` : ''}
+              ${data.cached ? ' &nbsp;·&nbsp; ♻️ Cached result' : ''}
+            </div>
+            <div style="display:flex;gap:16px;margin-top:12px">
+              ${['fail','warn','pass'].map(s => `<span style="font-size:13px"><strong style="color:${statusColor[s.toUpperCase()]}">${data.summary?.[s] || 0}</strong> ${s.toUpperCase()}</span>`).join('')}
+            </div>
+          </div>`;
+
+        // Metrics panel
+        if (data.keyMetrics && Object.values(data.keyMetrics).some(v => v !== null)) {
+          const metrics = data.keyMetrics;
+          const metricItems = [
+            ['Unlev IRR', metrics.unleveredIRR],
+            ['Levered IRR', metrics.leveredIRR],
+            ['Cap Rate', metrics.capRate],
+            ['WACD', metrics.wacd],
+            ['ICR', metrics.icr],
+            ['LVR', metrics.ltv],
+            ['LTC', metrics.ltc],
+            ['WALE', metrics.wale],
+            ['YoC', metrics.yieldOnCost],
+            ['Dev Margin', metrics.devMargin],
+            ['Occupancy', metrics.occupancy],
+            ['Dist. Yield', metrics.distributionYield],
+            ['NAV/Unit', metrics.navPerUnit],
+            ['Hold Period', metrics.holdPeriod],
+            ['Rev/sqm', metrics.revenuePerSqm],
+          ].filter(([, v]) => v !== null && v !== undefined);
+
+          if (metricItems.length > 0) {
+            html += `<div style="background:white;border:1px solid #dddcd4;border-radius:12px;padding:16px 20px;margin-bottom:20px">
+              <div style="font-size:11px;font-weight:600;color:#9a9990;letter-spacing:.08em;margin-bottom:12px">KEY METRICS</div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px">
+                ${metricItems.map(([label, val]) => `
+                  <div style="background:#f5f4ef;border-radius:8px;padding:8px 12px">
+                    <div style="font-size:10px;color:#9a9990;margin-bottom:2px">${label}</div>
+                    <div style="font-size:14px;font-weight:600;color:#1a1a18">${val}</div>
+                  </div>`).join('')}
+              </div>
+            </div>`;
+          }
+        }
+
+        // Findings
+        html += `<div style="margin-bottom:20px">
+          <div style="font-size:11px;font-weight:600;color:#9a9990;letter-spacing:.08em;margin-bottom:12px">FINDINGS</div>`;
+
+        for (const f of (data.findings || [])) {
+          const s = f.status || 'WARN';
+          const cellsHtml = (f.cells || []).slice(0, 6).map(c => `
+            <div style="display:flex;gap:8px;padding:4px 8px;background:#f5f4ef;border-radius:5px;font-size:11px;margin-bottom:3px">
+              <span style="font-family:monospace;color:#7a5200;min-width:70px">${c.ref}</span>
+              <span style="color:#5a5a56">${c.note}</span>
+              ${c.value ? `<span style="font-family:monospace;color:#9a9990;margin-left:auto">${c.value}</span>` : ''}
+            </div>`).join('');
+
+          html += `
+            <div style="background:white;border:1px solid #dddcd4;border-radius:10px;overflow:hidden;margin-bottom:8px">
+              <div style="background:${statusBg[s]};padding:8px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #dddcd4">
+                <span style="font-size:10px;font-weight:600;color:${statusColor[s]}">${s}</span>
+                <span style="font-size:12px;font-weight:500;flex:1">${f.id} · ${f.title}</span>
+                ${f.impact && f.impact !== 'NONE' ? `<span style="font-size:10px;padding:2px 6px;border-radius:4px;border:1px solid #dddcd4;color:#5a5a56;background:white">${f.impact}</span>` : ''}
+              </div>
+              <div style="padding:12px 14px">
+                <p style="font-size:12px;color:#5a5a56;line-height:1.7;margin-bottom:8px">${f.description}</p>
+                ${cellsHtml ? `<div style="margin-bottom:8px">${cellsHtml}</div>` : ''}
+                ${f.irrImpact ? `<div style="font-size:11px;color:${statusColor[s]};background:${statusBg[s]};padding:6px 10px;border-radius:6px;margin-bottom:8px"><strong>IRR impact:</strong> ${f.irrImpact}</div>` : ''}
+                ${f.fix ? `<div style="font-size:11px;color:#1a6b3c;background:#edf5f0;padding:6px 10px;border-radius:6px"><strong>Fix:</strong> ${f.fix}</div>` : ''}
+              </div>
+            </div>`;
+        }
+        html += `</div>`;
+
+        // Analysis Metrics Panel (for testing/optimization)
+        if (data.metrics) {
+          const m = data.metrics;
+          const toolRows = Object.entries(m.toolCallCount || {})
+            .sort((a, b) => b[1] - a[1])
+            .map(([tool, count]) => `<span style="font-size:11px;background:#f5f4ef;padding:2px 8px;border-radius:4px;margin:2px">${tool} ×${count}</span>`)
+            .join('');
+
+          html += `
+            <div style="background:white;border:1px solid #dddcd4;border-radius:12px;padding:16px 20px;margin-bottom:20px">
+              <div style="font-size:11px;font-weight:600;color:#9a9990;letter-spacing:.08em;margin-bottom:12px">⚙️ ANALYSIS METRICS</div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin-bottom:12px">
+                ${[
+                  ['Analysis time', data.analysisTime || '—'],
+                  ['Agentic rounds', m.rounds || '—'],
+                  ['Input tokens', (m.inputTokens || 0).toLocaleString()],
+                  ['Output tokens', (m.outputTokens || 0).toLocaleString()],
+                  ['Cached tokens', (m.cachedTokens || 0).toLocaleString()],
+                  ['Cache hit rate', m.cacheHitRate || '0%'],
+                  ['Est. cost', '$' + (m.estimatedCostUSD || '0')],
+                  ['Total tool calls', (m.toolsUsed || []).length],
+                ].map(([label, val]) => `
+                  <div style="background:#f5f4ef;border-radius:8px;padding:8px 10px">
+                    <div style="font-size:10px;color:#9a9990;margin-bottom:2px">${label}</div>
+                    <div style="font-size:13px;font-weight:600;color:#1a1a18">${val}</div>
+                  </div>`).join('')}
+              </div>
+              <div style="font-size:10px;color:#9a9990;margin-bottom:6px;font-weight:600">TOOL USAGE</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px">${toolRows || '<span style="font-size:11px;color:#9a9990">No tools recorded</span>'}</div>
+            </div>`;
+        }
+
+        // Scope note
+        html += `<p style="font-size:11px;color:#9a9990;text-align:center;padding:0 20px">${data.scope || 'This report checks structural and mathematical integrity. A clean Verifi report is necessary but not sufficient for a reliable model.'}</p>`;
+
+        container.innerHTML = html;
+
+        // Build feedback context
+        const feedbackContext = {
+          modelType: data.modelType || null,
+          sector: data.sector || null,
+          verdict: data.verdict || null,
+          reportSummary: data.summary || null,
+          keyMetrics: data.keyMetrics || null,
+          allFindings: data.findings || [],
+        };
+
+        const nonPassFindings = (data.findings || []).filter(f => f.status !== 'PASS');
+        if (nonPassFindings.length > 0) {
+          setTimeout(() => injectFeedbackWidgets(nonPassFindings, feedbackContext), 50);
+        }
+        setTimeout(() => injectFixBar(feedbackContext), 100);
+
+      // ── Legacy HTML report format ────────────────────────────────────────
+      } else if (data.reportHtml) {
+        container.innerHTML = data.reportHtml;
+
         const feedbackContext = {
           modelType: data.modelType || null,
           sector: data.sector || null,
@@ -500,19 +643,16 @@
           reportSummary: data.summary || null,
           keyMetrics: data.keyMetrics || null,
           modelProfile: data.modelProfile || null,
-          // findings array for cross-referencing
           allFindings: data.findings || [],
         };
 
-        // Inject feedback widgets for all non-pass findings
         const nonPassFindings = (data.findings || []).filter(f => f.status !== 'PASS');
         if (nonPassFindings.length > 0) {
           setTimeout(() => injectFeedbackWidgets(nonPassFindings, feedbackContext), 50);
         }
-
-        // Inject "did you fix" bar at bottom of report
         setTimeout(() => injectFixBar(feedbackContext), 100);
       }
+
     } catch {
       // leave empty state visible
     }

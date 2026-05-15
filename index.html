@@ -570,82 +570,33 @@
     errorBox.classList.remove('visible');
 
     try {
-      setProgress(2, 'Preparing scan…');
-      const arrayBuffer = await selectedFile.arrayBuffer();
-      const uint8 = new Uint8Array(arrayBuffer);
+      setProgress(5, 'Uploading model…');
 
-      // ── Run full model scan in Web Worker (non-blocking) ──────────────────
-      const modelData = await new Promise((resolve, reject) => {
-        const scanWorker = new Worker('/scanner.js');
-
-        scanWorker.onmessage = (e) => {
-          const { type, pct, label, result, message } = e.data;
-          if (type === 'progress') {
-            // Scanner reports 5-95%, map to 2-55% of overall progress
-            const mapped = 2 + Math.round(pct * 0.53);
-            setProgress(mapped, label);
-          } else if (type === 'done') {
-            scanWorker.terminate();
-            resolve(result);
-          } else if (type === 'error') {
-            scanWorker.terminate();
-            reject(new Error(message));
-          }
-        };
-
-        scanWorker.onerror = (e) => {
-          scanWorker.terminate();
-          reject(new Error('Scanner failed: ' + e.message));
-        };
-
-        scanWorker.postMessage({ uint8, fileName: selectedFile.name });
-      });
-
-      // ── Build full summary to send to Cloudflare Worker ────────────────────
-      setProgress(58, 'Running 100+ model checks…');
-
-      const compactSummary = {
-        sheetNames: modelData.sheetNames,
-        totalSheets: modelData.totalSheets,
-        namedRanges: (modelData.namedRanges || []).slice(0, 30),
-        sheetDependencies: modelData.sheetDependencies || {},
-        globalStats: modelData.globalStats,
-        sheets: {},
-      };
-
-      for (const [name, data] of Object.entries(modelData.sheets)) {
-        compactSummary.sheets[name] = {
-          dimensions: data.dimensions,
-          refErrorCount: (data.refErrors || []).length,
-          refErrorSamples: (data.refErrors || []).slice(0, 10),
-          hardcodeSamples: (data.hardcodes || []).slice(0, 15),
-          checkRowFailures: (data.checkRows || []).slice(0, 10),
-          formulaCount: data.formulaCount,
-          valueCount: data.valueCount,
-          hiddenRows: (data.hiddenRows || []).length,
-          hiddenCols: (data.hiddenCols || []).length,
-          crossSheetRefs: (data.crossSheetRefs || []).slice(0, 15),
-          keyRows: data.keyRows || {},
-        };
-      }
-
-      // ── Send raw file to Worker (Files API path) ────────────────────────────
-      setProgress(62, 'Analysing with AI…');
-
-      // Calculate cells scanned for stats display
-      let totalCells = 0;
-      for (const sheet of Object.values(modelData.sheets || {})) {
-        if (sheet.dimensions) totalCells += (sheet.dimensions.rows || 0) * (sheet.dimensions.cols || 0);
-      }
-
-      // Send raw Excel file via multipart
+      // Send raw Excel file directly — no browser-side scanning
       const form = new FormData();
       form.append('file', selectedFile, selectedFile.name);
-      form.append('cellsScanned', String(totalCells));
 
-      // Long timeout for Code Execution (sandbox startup can take 60-90s)
+      setProgress(15, 'Extracting model content…');
+
+      // Animate progress while waiting (analysis takes 30-180s)
+      const progressSteps = [
+        [25, 'Identifying model type…'],
+        [35, 'Checking for formula errors…'],
+        [50, 'Verifying accounting identities…'],
+        [65, 'Analysing economic assumptions…'],
+        [78, 'Running sense checks…'],
+        [88, 'Building findings…'],
+      ];
+      let stepIdx = 0;
+      const progressTimer = setInterval(() => {
+        if (stepIdx < progressSteps.length) {
+          const [pct, label] = progressSteps[stepIdx++];
+          setProgress(pct, label);
+        }
+      }, 12000); // every 12s
+
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 min timeout
+      const timeoutId = setTimeout(() => controller.abort(), 270000); // 4.5 min
 
       let res;
       try {
@@ -656,9 +607,10 @@
         });
       } finally {
         clearTimeout(timeoutId);
+        clearInterval(progressTimer);
       }
 
-      setProgress(90, 'Building report…');
+      setProgress(95, 'Building report…');
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Unknown error' }));
